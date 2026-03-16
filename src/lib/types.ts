@@ -20,32 +20,20 @@ export interface PortionItem {
 export interface PersonMeal {
   input: string
   meal: MacroMeal | null
+  eaten?: boolean
 }
 
 export interface DayPlan {
   day: string
   theme: string
-  his: {
-    breakfast: PersonMeal
-    lunch: PersonMeal
-    snack: PersonMeal
-  }
-  her: {
-    breakfast: PersonMeal
-    lunch: PersonMeal
-    snack: PersonMeal
-  }
+  his: { breakfast: PersonMeal; lunch: PersonMeal; snack: PersonMeal }
+  her: { breakfast: PersonMeal; lunch: PersonMeal; snack: PersonMeal }
   dinner: PersonMeal
 }
 
 export interface MealPlan {
   days: DayPlan[]
-}
-
-export interface Preferences {
-  proteins: string
-  cuisines: string
-  notes: string
+  weekId?: string // "2026-W12" format
 }
 
 export interface Dislikes {
@@ -67,12 +55,6 @@ export interface MealIdea {
   carbs: number
   fat: number
   portions: PortionItem[]
-}
-
-export interface MealIdeasResponse {
-  breakfast: MealIdea[]
-  lunch: MealIdea[]
-  dinner: MealIdea[]
 }
 
 export interface PresetMeal {
@@ -110,4 +92,19 @@ export interface ScannedFood {
   sugar: number
   imageUrl: string
   createdAt: string
+}
+
+export interface WaterEntry {
+  id: string
+  person: 'his' | 'her'
+  glasses: number
+  date: string
+}
+
+export interface LockedMeal {
+  id: string
+  week_id: string
+  day_index: number
+  person: string
+  meal_type: string
 }

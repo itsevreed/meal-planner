@@ -1,67 +1,8 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root, [data-theme="light"] {
-  --bg: #ffffff;
-  --bg2: #f7f7f5;
-  --bg3: #f0efeb;
-  --border: rgba(0,0,0,0.12);
-  --border2: rgba(0,0,0,0.22);
-  --text: #1a1a18;
-  --text2: #6b6b66;
-  --text3: #9e9e99;
-  --radius: 8px;
-  --radius-lg: 12px;
-  --accent: #1a1a18;
-  --green: #2d7a4f;
-  --green-bg: #edf7f1;
-  --warn: #c97a2a;
-  --warn-bg: #fef3e4;
-  --danger-bg: #fee;
-  --danger: #d33;
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-[data-theme="dark"] {
-  --bg: #1c1c1a;
-  --bg2: #242422;
-  --bg3: #2c2c2a;
-  --border: rgba(255,255,255,0.1);
-  --border2: rgba(255,255,255,0.2);
-  --text: #e8e8e4;
-  --text2: #9e9e99;
-  --text3: #6b6b66;
-  --accent: #e8e8e4;
-  --green: #5dbf8a;
-  --green-bg: #1a2e22;
-  --warn: #e8a96a;
-  --warn-bg: #2e2418;
-  --danger-bg: #3a1818;
-  --danger: #f88;
-}
-
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-  min-height: 100dvh;
-  -webkit-font-smoothing: antialiased;
-  -webkit-tap-highlight-color: transparent;
-  overflow-x: hidden;
-  transition: background 0.2s, color 0.2s;
-}
-
+:root, [data-theme="light"] { --bg: #fff; --bg2: #f7f7f5; --bg3: #f0efeb; --border: rgba(0,0,0,.12); --border2: rgba(0,0,0,.22); --text: #1a1a18; --text2: #6b6b66; --text3: #9e9e99; --radius: 8px; --radius-lg: 12px; --green: #2d7a4f; --green-bg: #edf7f1; --warn: #c97a2a; --warn-bg: #fef3e4; --danger: #d33; --danger-bg: #fee; }
+[data-theme="dark"] { --bg: #1c1c1a; --bg2: #242422; --bg3: #2c2c2a; --border: rgba(255,255,255,.1); --border2: rgba(255,255,255,.2); --text: #e8e8e4; --text2: #9e9e99; --text3: #6b6b66; --green: #5dbf8a; --green-bg: #1a2e22; --warn: #e8a96a; --warn-bg: #2e2418; --danger: #f88; --danger-bg: #3a1818; }
+html { -webkit-text-size-adjust: 100%; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; overflow-x: hidden; transition: background .2s, color .2s; }
 button { font-family: inherit; cursor: pointer; -webkit-appearance: none; }
-input, textarea, select {
-  font-family: inherit;
-  font-size: 16px;
-  -webkit-appearance: none;
-  appearance: none;
-  border-radius: 0;
-}
-textarea { resize: vertical; }
-
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+input, textarea, select { font-family: inherit; font-size: 16px; -webkit-appearance: none; appearance: none; }
+::-webkit-scrollbar { width: 4px; height: 4px; } ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }

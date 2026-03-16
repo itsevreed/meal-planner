@@ -4,23 +4,16 @@ import { NextRequest, NextResponse } from 'next/server'
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
-  const { mealInput, mealType, person, remainingCals, targetProtein, dinnerMacros, exactLunchBudget, dislikes, lockedMealsCals, scannedFoods } = await req.json()
+  const { mealInput, mealType, person, remainingCals, targetProtein, dinnerMacros, exactBudget, dislikes, lockedMealsCals, scannedFoods } = await req.json()
 
-  // dislikes: string[] of foods to absolutely avoid
-  // lockedMealsCals: number — total cals already locked for this person today (breakfast+lunch+snack)
-  // scannedFoods: array of { name, brand, servingSize, cal, protein, carbs, fat } from barcode scans
-
-  const dislikeWarning = dislikes && dislikes.length > 0
-    ? `\n\nFOODS TO ABSOLUTELY AVOID — do NOT include any of these ingredients: ${dislikes.join(', ')}. If the user's input mentions a disliked food, suggest a substitute instead.`
+  const dislikeWarning = dislikes?.length > 0
+    ? `\n\nFOODS TO ABSOLUTELY AVOID — do NOT include any of these: ${dislikes.join(', ')}. If the user mentions a disliked food, suggest a substitute.`
     : ''
 
-  // Build scanned foods reference for accurate nutrition data
   let scannedFoodsRef = ''
-  if (scannedFoods && scannedFoods.length > 0) {
-    const foodList = scannedFoods.map((f: any) =>
-      `- "${f.name}" (${f.brand}): ${f.cal} cal, ${f.protein}g protein, ${f.carbs}g carbs, ${f.fat}g fat per ${f.servingSize}`
-    ).join('\n')
-    scannedFoodsRef = `\n\nSCANNED FOODS DATABASE — if any ingredient matches one of these, use THESE EXACT nutrition values (they are from verified barcode data):\n${foodList}`
+  if (scannedFoods?.length > 0) {
+    const list = scannedFoods.map((f: any) => `- "${f.name}" (${f.brand}): ${f.cal} cal, ${f.protein}g P, ${f.carbs}g C, ${f.fat}g F per ${f.servingSize}`).join('\n')
+    scannedFoodsRef = `\n\nSCANNED FOODS DATABASE — use THESE EXACT values if any ingredient matches:\n${list}`
   }
 
   let prompt = ''
@@ -29,95 +22,47 @@ export async function POST(req: NextRequest) {
     prompt = `You are a precise nutritionist. The user is having this for dinner: "${mealInput}"
 ${dislikeWarning}${scannedFoodsRef}
 
-CRITICAL RULE: Use ONLY the ingredients the user mentioned in their input. Do NOT add extra ingredients, sauces, oils, sides, or garnishes unless the user explicitly listed them. If they say "beef, lettuce, and cheese", the portions list must contain ONLY beef, lettuce, and cheese — nothing else.
+CRITICAL: Use ONLY the ingredients the user mentioned. Do NOT add extra ingredients, sauces, oils, sides, or garnishes unless explicitly listed.
 
-Calculate realistic macros for a satisfying dinner portion of this meal.
-Aim for HIGH PROTEIN — at least 40-55g protein for a shared dinner.
-Target roughly 550-700 calories total.
+Calculate realistic macros. Aim for HIGH PROTEIN (40-55g). Target ~550-700 calories.
 
 Respond ONLY with valid JSON, no markdown:
-{
-  "name": "Meal name",
-  "description": "Brief description",
-  "cal": 625,
-  "protein": 52,
-  "carbs": 45,
-  "fat": 22,
-  "portions": [
-    { "ingredient": "Sirloin steak", "amount": "8 oz", "cal": 450, "protein": 46, "carbs": 0, "fat": 22 },
-    { "ingredient": "Baked potato", "amount": "1 medium (6oz)", "cal": 160, "protein": 4, "carbs": 37, "fat": 0 }
-  ]
-}`
+{"name":"Meal name","description":"Brief description","cal":625,"protein":52,"carbs":45,"fat":22,"portions":[{"ingredient":"Sirloin steak","amount":"8 oz","cal":450,"protein":46,"carbs":0,"fat":22}]}`
   } else {
-    const calTarget = remainingCals
     const isHim = person === 'his'
     const weightNote = isHim ? "He is 5'9\", 215 lbs, target ~1820 cal/day." : "She is 5'7\", 175 lbs, target ~1490 cal/day."
 
-    // If an exact budget is given (from B+L dialog or locked meal subtraction), use it
     let mealBudget: number
-    if (exactLunchBudget && mealType === 'lunch') {
-      mealBudget = exactLunchBudget
-    } else if (lockedMealsCals !== undefined && lockedMealsCals > 0) {
-      // There's a locked sibling meal — this meal gets whatever is left
-      mealBudget = calTarget - lockedMealsCals
+    if (exactBudget) {
+      mealBudget = exactBudget
+    } else if (lockedMealsCals > 0) {
+      mealBudget = remainingCals - lockedMealsCals
     } else if (mealType === 'snack') {
-      // Snacks get ~15% of remaining budget
-      mealBudget = Math.round(calTarget * 0.15)
+      mealBudget = Math.round(remainingCals * 0.15)
     } else {
-      // Breakfast ~37%, lunch ~48% of remaining (leaving room for snack)
-      mealBudget = mealType === 'breakfast'
-        ? Math.round(calTarget * 0.37)
-        : Math.round(calTarget * 0.48)
+      mealBudget = mealType === 'breakfast' ? Math.round(remainingCals * 0.37) : Math.round(remainingCals * 0.48)
     }
+    mealBudget = Math.max(mealBudget, 100)
 
-    // Ensure budget is at least 150 cal
-    mealBudget = Math.max(mealBudget, 150)
-
-    prompt = `You are a precise nutritionist helping plan a ${mealType} meal. ${weightNote}
+    prompt = `You are a precise nutritionist helping plan a ${mealType}. ${weightNote}
 ${dislikeWarning}${scannedFoodsRef}
 
-CRITICAL RULE: Use ONLY the ingredients the user mentioned in their input. Do NOT add extra ingredients, sauces, oils, sides, or garnishes unless the user explicitly listed them. If they say "eggs and turkey sausage", the portions list must contain ONLY eggs and turkey sausage — nothing else.
+CRITICAL: Use ONLY the ingredients the user mentioned. Do NOT add extras.
 
-After dinner (${dinnerMacros?.cal || 0} cal), this person has a budget of exactly ${mealBudget} calories for this ${mealType}.
+Budget: exactly ~${mealBudget} calories for this ${mealType}. Do NOT exceed.
+The meal: "${mealInput}"
 
-THIS ${mealType.toUpperCase()} MUST BE EXACTLY ~${mealBudget} CALORIES. Do NOT exceed this number.
-
-The meal they want: "${mealInput}"
-
-Calculate exact portions of each ingredient so the total hits close to ${mealBudget} calories. Prioritize HIGH PROTEIN — maximize protein within the calorie budget. Be specific with amounts (e.g. "6 oz", "1 cup", "2 large eggs").
-
-CRITICAL: The sum of all portion calories MUST equal the meal's total cal. Do not exceed ${mealBudget} calories. Use ONLY the ingredients listed by the user.
+Calculate exact portions. Prioritize HIGH PROTEIN. Be specific with amounts.
+The sum of portion calories MUST equal the total cal.
 
 Respond ONLY with valid JSON, no markdown:
-{
-  "name": "Meal name",
-  "description": "Brief description with key amounts",
-  "cal": ${mealBudget},
-  "protein": 38,
-  "carbs": 30,
-  "fat": 12,
-  "portions": [
-    { "ingredient": "Ground beef (93% lean)", "amount": "5 oz", "cal": 195, "protein": 30, "carbs": 0, "fat": 8 },
-    { "ingredient": "Romaine lettuce", "amount": "2 cups", "cal": 16, "protein": 1, "carbs": 3, "fat": 0 }
-  ]
-}`
+{"name":"Meal name","description":"Brief description","cal":${mealBudget},"protein":38,"carbs":30,"fat":12,"portions":[{"ingredient":"Ground beef (93%)","amount":"5 oz","cal":195,"protein":30,"carbs":0,"fat":8}]}`
   }
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }],
-    })
-
-    const text = message.content
-      .map((b) => (b.type === 'text' ? b.text : ''))
-      .join('')
-      .replace(/```json|```/g, '')
-      .trim()
-
-    const meal = JSON.parse(text)
-    return NextResponse.json({ meal })
+    const msg = await client.messages.create({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+    const text = msg.content.map(b => b.type === 'text' ? b.text : '').join('').replace(/```json|```/g, '').trim()
+    return NextResponse.json({ meal: JSON.parse(text) })
   } catch (e) {
     console.error(e)
     return NextResponse.json({ error: 'Failed to calculate meal' }, { status: 500 })
