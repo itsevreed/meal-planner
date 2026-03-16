@@ -1,24 +1,26 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { MealPlan, DayPlan, PersonMeal, MacroMeal, PortionItem, Dislikes, GroceryItem, MealIdea, PresetMeal, WeightEntry } from '@/lib/types'
 import styles from './page.module.css'
 
 const DAYS_META = [
-  { name: 'Monday',    theme: 'Breakfast theme' },
-  { name: 'Tuesday',   theme: 'Taco Tuesday' },
+  { name: 'Monday', theme: 'Breakfast theme' },
+  { name: 'Tuesday', theme: 'Taco Tuesday' },
   { name: 'Wednesday', theme: 'Asian Wednesday' },
-  { name: 'Thursday',  theme: 'Steak & Potato' },
-  { name: 'Friday',    theme: 'Salmon Friday' },
-  { name: 'Saturday',  theme: 'Open choice' },
-  { name: 'Sunday',    theme: 'Open choice' },
+  { name: 'Thursday', theme: 'Steak & Potato' },
+  { name: 'Friday', theme: 'Salmon Friday' },
+  { name: 'Saturday', theme: 'Open choice' },
+  { name: 'Sunday', theme: 'Open choice' },
 ]
 
-const HIM = { label: 'Him', calTarget: 1820, proteinTarget: 160, breakfastCal: 420, lunchCal: 550 }
-const HER = { label: 'Her', calTarget: 1490, proteinTarget: 130, breakfastCal: 330, lunchCal: 440 }
+type User = 'evan' | 'liv'
+const PROFILES = {
+  evan: { label: 'Evan', key: 'his' as const, calTarget: 1820, proteinTarget: 160, emoji: '💪' },
+  liv:  { label: 'Liv',  key: 'her' as const, calTarget: 1490, proteinTarget: 130, emoji: '✨' },
+}
 
 function emptyPersonMeal(): PersonMeal { return { input: '', meal: null } }
-
 function emptyDay(meta: typeof DAYS_META[0]): DayPlan {
   return {
     day: meta.name, theme: meta.theme,
@@ -28,24 +30,72 @@ function emptyDay(meta: typeof DAYS_META[0]): DayPlan {
   }
 }
 
-function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7) }
-
 type Tab = 'plan' | 'ideas' | 'presets' | 'dislikes' | 'grocery' | 'weight'
 
 export default function Home() {
+  const [user, setUser] = useState<User | null>(null)
+
+  // Check localStorage on mount
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('meal-planner-user') : null
+    if (saved === 'evan' || saved === 'liv') setUser(saved)
+  }, [])
+
+  const selectUser = (u: User) => {
+    localStorage.setItem('meal-planner-user', u)
+    setUser(u)
+  }
+
+  const switchUser = () => {
+    localStorage.removeItem('meal-planner-user')
+    setUser(null)
+  }
+
+  if (!user) return <LoginScreen onSelect={selectUser} />
+  return <AppMain user={user} onSwitch={switchUser} />
+}
+
+// ═══════════ LOGIN SCREEN ═══════════
+function LoginScreen({ onSelect }: { onSelect: (u: User) => void }) {
+  return (
+    <div className={styles.loginScreen}>
+      <div className={styles.loginCard}>
+        <h1 className={styles.loginTitle}>Meal Planner</h1>
+        <p className={styles.loginSub}>High-protein weekly meals · weight loss mode</p>
+        <div className={styles.loginPrompt}>Who's planning?</div>
+        <div className={styles.loginButtons}>
+          <button className={styles.loginBtn} onClick={() => onSelect('evan')}>
+            <span className={styles.loginEmoji}>💪</span>
+            <span className={styles.loginName}>Evan</span>
+            <span className={styles.loginStats}>1,820 cal · 160g protein</span>
+          </button>
+          <button className={styles.loginBtn} onClick={() => onSelect('liv')}>
+            <span className={styles.loginEmoji}>✨</span>
+            <span className={styles.loginName}>Liv</span>
+            <span className={styles.loginStats}>1,490 cal · 130g protein</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════ MAIN APP ═══════════
+function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
+  const profile = PROFILES[user]
+  const personKey = profile.key // 'his' or 'her'
+
   const [tab, setTab] = useState<Tab>('plan')
   const [plan, setPlan] = useState<MealPlan>(() => ({ days: DAYS_META.map(emptyDay) }))
   const [dislikes, setDislikes] = useState<Dislikes>({ his: [], her: [] })
-  const [hisInput, setHisInput] = useState('')
-  const [herInput, setHerInput] = useState('')
+  const [dislikeInput, setDislikeInput] = useState('')
   const [loading, setLoading] = useState(true)
   const [calculating, setCalculating] = useState<string | null>(null)
   const [grocery, setGrocery] = useState<GroceryItem[] | null>(null)
   const [groceryLoading, setGroceryLoading] = useState(false)
   const [expandedDay, setExpandedDay] = useState<number>(0)
 
-  // Meal ideas
-  const [ideasWho, setIdeasWho] = useState<'his' | 'her'>('his')
+  // Ideas
   const [ideas, setIdeas] = useState<{ breakfast: MealIdea[], lunch: MealIdea[], dinner: MealIdea[] } | null>(null)
   const [ideasLoading, setIdeasLoading] = useState(false)
   const [selectedIdeas, setSelectedIdeas] = useState<{ breakfast: number | null, lunch: number | null, dinner: number | null }>({ breakfast: null, lunch: null, dinner: null })
@@ -54,74 +104,21 @@ export default function Home() {
   const [presets, setPresets] = useState<PresetMeal[]>([])
   const [expandedPreset, setExpandedPreset] = useState<string | null>(null)
 
-  // Weight tracking
+  // Weight
   const [weightEntries, setWeightEntries] = useState<WeightEntry[]>([])
-  const [weightWho, setWeightWho] = useState<'his' | 'her'>('his')
   const [weightInput, setWeightInput] = useState('')
   const [weightDate, setWeightDate] = useState(() => new Date().toISOString().split('T')[0])
 
-  // Dialog for B/L input
-  const [mealDialog, setMealDialog] = useState<{
-    open: boolean
-    di: number
-    who: 'his' | 'her'
-    breakfastInput: string
-    lunchInput: string
-  } | null>(null)
-
-  // Preset picker
-  const [presetPicker, setPresetPicker] = useState<{
-    open: boolean
-    di: number
-    who: 'his' | 'her' | 'shared'
-    mealType: 'breakfast' | 'lunch' | 'dinner'
-  } | null>(null)
-
-  // Locked meals — key format: "di-who-mealType" e.g. "0-his-breakfast"
+  // Locks
   const [lockedMeals, setLockedMeals] = useState<Set<string>>(new Set())
-
-  const toggleLock = (di: number, who: 'his' | 'her' | 'shared', mealType: 'breakfast' | 'lunch' | 'dinner') => {
-    const key = `${di}-${who}-${mealType}`
-    setLockedMeals(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key); else next.add(key)
-      return next
-    })
+  const toggleLock = (di: number, who: string, mt: string) => {
+    const key = `${di}-${who}-${mt}`
+    setLockedMeals(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n })
   }
+  const isLocked = (di: number, who: string, mt: string) => lockedMeals.has(`${di}-${who}-${mt}`)
 
-  const isLocked = (di: number, who: 'his' | 'her' | 'shared', mealType: 'breakfast' | 'lunch' | 'dinner') => {
-    return lockedMeals.has(`${di}-${who}-${mealType}`)
-  }
-
-  // Get locked calories for a person on a given day (breakfast + lunch only)
-  const getLockedCals = (di: number, who: 'his' | 'her') => {
-    const day = plan.days[di]
-    let lockedCal = 0
-    if (isLocked(di, who, 'breakfast') && day[who].breakfast.meal) lockedCal += day[who].breakfast.meal!.cal
-    if (isLocked(di, who, 'lunch') && day[who].lunch.meal) lockedCal += day[who].lunch.meal!.cal
-    return lockedCal
-  }
-
-  // Get all dislikes for a person (for shared dinner, combine both)
-  const getDislikesFor = (who: 'his' | 'her' | 'shared') => {
-    if (who === 'shared') return [...dislikes.his, ...dislikes.her]
-    return dislikes[who]
-  }
-
-  // Copy meal between days
-  const [copiedMeal, setCopiedMeal] = useState<{
-    meal: PersonMeal
-    who: 'his' | 'her' | 'shared'
-    mealType: 'breakfast' | 'lunch' | 'dinner'
-  } | null>(null)
-
-  const [copyTarget, setCopyTarget] = useState<{
-    open: boolean
-    meal: PersonMeal
-    who: 'his' | 'her' | 'shared'
-    mealType: 'breakfast' | 'lunch' | 'dinner'
-  } | null>(null)
-
+  // Copy
+  const [copyTarget, setCopyTarget] = useState<{ meal: PersonMeal; who: string; mealType: string } | null>(null)
   const copyMealToDay = (targetDi: number) => {
     if (!copyTarget) return
     const { meal: pm, who, mealType } = copyTarget
@@ -132,50 +129,41 @@ export default function Home() {
     setCopyTarget(null)
   }
 
+  // Preset picker
+  const [presetPicker, setPresetPicker] = useState<{ di: number; mealType: 'breakfast' | 'lunch' | 'dinner' } | null>(null)
+
+  const getMyDislikes = () => dislikes[personKey]
+  const getAllDislikes = () => [...dislikes.his, ...dislikes.her]
+
   const sanitizePlan = (raw: any): MealPlan => {
-    const safeMeal = (m: any): PersonMeal => ({
-      input: typeof m?.input === 'string' ? m.input : '',
-      meal: m?.meal ?? null,
-    })
-    const days = DAYS_META.map((meta, i) => {
-      const d = raw?.days?.[i] ?? {}
-      return {
-        day: meta.name, theme: meta.theme,
-        his: { breakfast: safeMeal(d?.his?.breakfast), lunch: safeMeal(d?.his?.lunch) },
-        her: { breakfast: safeMeal(d?.her?.breakfast), lunch: safeMeal(d?.her?.lunch) },
-        dinner: safeMeal(d?.dinner),
-      }
-    })
-    return { days }
+    const safeMeal = (m: any): PersonMeal => ({ input: typeof m?.input === 'string' ? m.input : '', meal: m?.meal ?? null })
+    return {
+      days: DAYS_META.map((meta, i) => {
+        const d = raw?.days?.[i] ?? {}
+        return {
+          day: meta.name, theme: meta.theme,
+          his: { breakfast: safeMeal(d?.his?.breakfast), lunch: safeMeal(d?.his?.lunch) },
+          her: { breakfast: safeMeal(d?.her?.breakfast), lunch: safeMeal(d?.her?.lunch) },
+          dinner: safeMeal(d?.dinner),
+        }
+      })
+    }
   }
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: dislikesData } = await supabase.from('dislikes').select('*')
-      if (dislikesData) {
-        setDislikes({
-          his: dislikesData.filter(d => d.person === 'his').map(d => d.item),
-          her: dislikesData.filter(d => d.person === 'her').map(d => d.item),
-        })
-      }
-      const { data: planData } = await supabase
-        .from('meal_plan').select('*').order('created_at', { ascending: false }).limit(1).single()
-      if (planData?.plan) setPlan(sanitizePlan(planData.plan))
+      const { data: dd } = await supabase.from('dislikes').select('*')
+      if (dd) setDislikes({ his: dd.filter(d => d.person === 'his').map(d => d.item), her: dd.filter(d => d.person === 'her').map(d => d.item) })
 
-      // Load presets
-      const { data: presetData } = await supabase.from('preset_meals').select('*').order('created_at', { ascending: false })
-      if (presetData) setPresets(presetData.map((p: any) => ({
-        id: p.id, name: p.name, mealType: p.meal_type, who: p.who,
-        cal: p.cal, protein: p.protein, carbs: p.carbs, fat: p.fat,
-        portions: p.portions || [], createdAt: p.created_at,
-      })))
+      const { data: pd } = await supabase.from('meal_plan').select('*').order('created_at', { ascending: false }).limit(1).single()
+      if (pd?.plan) setPlan(sanitizePlan(pd.plan))
 
-      // Load weight entries
-      const { data: weightData } = await supabase.from('weight_entries').select('*').order('date', { ascending: true })
-      if (weightData) setWeightEntries(weightData.map((w: any) => ({
-        id: w.id, person: w.person, weight: w.weight, date: w.date, createdAt: w.created_at,
-      })))
+      const { data: pr } = await supabase.from('preset_meals').select('*').order('created_at', { ascending: false })
+      if (pr) setPresets(pr.map((p: any) => ({ id: p.id, name: p.name, mealType: p.meal_type, who: p.who, cal: p.cal, protein: p.protein, carbs: p.carbs, fat: p.fat, portions: p.portions || [], createdAt: p.created_at })))
+
+      const { data: wd } = await supabase.from('weight_entries').select('*').order('date', { ascending: true })
+      if (wd) setWeightEntries(wd.map((w: any) => ({ id: w.id, person: w.person, weight: w.weight, date: w.date, createdAt: w.created_at })))
     } catch {}
     setLoading(false)
   }, [])
@@ -199,29 +187,25 @@ export default function Home() {
     })
   }
 
-  // ── Calculate single meal ──
-  const calculateMeal = async (
-    di: number, who: 'his' | 'her' | 'shared',
-    mealType: 'breakfast' | 'lunch' | 'dinner', input: string
-  ) => {
+  // ── Calculate meal ──
+  const calculateMeal = async (di: number, mealType: 'breakfast' | 'lunch' | 'dinner', input: string) => {
     if (!input.trim()) return
+    const who = mealType === 'dinner' ? 'shared' : personKey
     const key = `${di}-${who}-${mealType}`
-    if (isLocked(di, who, mealType)) return // don't recalculate locked meals
+    if (isLocked(di, who, mealType)) return
     setCalculating(key)
 
     const day = plan.days[di]
-    const dinnerMacros = day.dinner.meal
-    const profile = who === 'his' ? HIM : HER
-    const dinnerCal = dinnerMacros?.cal || 0
+    const dinnerCal = day.dinner.meal?.cal || 0
     const remainingCals = profile.calTarget - dinnerCal
-    const personDislikes = getDislikesFor(who)
+    const personDislikes = mealType === 'dinner' ? getAllDislikes() : getMyDislikes()
 
-    // Check if the sibling meal (breakfast or lunch) is locked
+    // Check locked sibling
     let lockedSiblingCals = 0
-    if (who !== 'shared' && mealType !== 'dinner') {
+    if (mealType !== 'dinner') {
       const sibling = mealType === 'breakfast' ? 'lunch' : 'breakfast'
-      if (isLocked(di, who, sibling) && day[who][sibling].meal) {
-        lockedSiblingCals = day[who][sibling].meal!.cal
+      if (isLocked(di, personKey, sibling) && day[personKey][sibling].meal) {
+        lockedSiblingCals = day[personKey][sibling].meal!.cal
       }
     }
 
@@ -230,138 +214,53 @@ export default function Home() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mealInput: input, mealType,
-          person: who === 'shared' ? 'shared' : who,
-          remainingCals, targetProtein: profile.proteinTarget, dinnerMacros,
+          person: mealType === 'dinner' ? 'shared' : personKey,
+          remainingCals, targetProtein: profile.proteinTarget,
+          dinnerMacros: day.dinner.meal,
           dislikes: personDislikes,
           lockedMealsCals: lockedSiblingCals,
         }),
       })
       const { meal } = await res.json()
-      updateDay(di, (d) => {
+      updateDay(di, d => {
         if (mealType === 'dinner') return { ...d, dinner: { input, meal } }
-        return { ...d, [who]: { ...(d as any)[who], [mealType]: { input, meal } } }
+        return { ...d, [personKey]: { ...d[personKey], [mealType]: { input, meal } } }
       })
-    } catch { alert('Failed to calculate. Please try again.') }
+    } catch { alert('Failed to calculate.') }
     setCalculating(null)
   }
 
-  // ── Calculate breakfast + lunch together from dialog ──
-  const calculateBothMeals = async (di: number, who: 'his' | 'her', breakfastInput: string, lunchInput: string) => {
-    if (!breakfastInput.trim() || !lunchInput.trim()) {
-      alert('Please enter both breakfast and lunch.')
-      return
-    }
-
-    const keyB = `${di}-${who}-breakfast`
-    const keyL = `${di}-${who}-lunch`
-    setCalculating(keyB)
-
+  // ── Recalculate portion ──
+  const recalculatePortions = async (di: number, mealType: 'breakfast' | 'lunch' | 'dinner', portionIndex: number, newAmount: string) => {
+    const who = mealType === 'dinner' ? 'shared' : personKey
     const day = plan.days[di]
-    const profile = who === 'his' ? HIM : HER
-    const dinnerCal = day.dinner.meal?.cal || 0
-    const dinnerProtein = day.dinner.meal?.protein || 0
-    const remainingCals = profile.calTarget - dinnerCal
-    const remainingProtein = profile.proteinTarget - dinnerProtein
-
-    // Calculate breakfast first (42% of remaining)
-    try {
-      const personDislikes = getDislikesFor(who)
-      const bRes = await fetch('/api/calculate-meal', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mealInput: breakfastInput, mealType: 'breakfast',
-          person: who, remainingCals, targetProtein: profile.proteinTarget,
-          dinnerMacros: day.dinner.meal,
-          dislikes: personDislikes,
-        }),
-      })
-      const { meal: breakfastMeal } = await bRes.json()
-
-      setCalculating(keyL)
-      // Calculate lunch with exact remaining budget after breakfast
-      const lunchBudget = remainingCals - (breakfastMeal?.cal || 0)
-      const lunchProteinTarget = remainingProtein - (breakfastMeal?.protein || 0)
-
-      const lRes = await fetch('/api/calculate-meal', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mealInput: lunchInput, mealType: 'lunch',
-          person: who,
-          remainingCals: lunchBudget + (breakfastMeal?.cal || 0),
-          targetProtein: profile.proteinTarget,
-          dinnerMacros: day.dinner.meal,
-          exactLunchBudget: lunchBudget,
-          dislikes: personDislikes,
-        }),
-      })
-      const { meal: lunchMeal } = await lRes.json()
-
-      updateDay(di, (d) => ({
-        ...d,
-        [who]: {
-          breakfast: { input: breakfastInput, meal: breakfastMeal },
-          lunch: { input: lunchInput, meal: lunchMeal },
-        },
-      }))
-    } catch { alert('Failed to calculate meals.') }
-    setCalculating(null)
-    setMealDialog(null)
-  }
-
-  // ── Recalculate portions via API when user edits an ingredient ──
-  const recalculatePortions = async (
-    di: number, who: 'his' | 'her' | 'shared',
-    mealType: 'breakfast' | 'lunch' | 'dinner',
-    portionIndex: number, newAmount: string
-  ) => {
-    const day = plan.days[di]
-    const pm: PersonMeal = mealType === 'dinner' ? day.dinner : (day as any)[who][mealType]
+    const pm: PersonMeal = mealType === 'dinner' ? day.dinner : day[personKey][mealType]
     if (!pm.meal?.portions) return
-
     try {
       const res = await fetch('/api/recalculate-portions', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          portions: pm.meal.portions,
-          editedIndex: portionIndex,
-          newAmount,
-          originalMeal: { name: pm.meal.name, cal: pm.meal.cal, protein: pm.meal.protein, carbs: pm.meal.carbs, fat: pm.meal.fat },
-        }),
+        body: JSON.stringify({ portions: pm.meal.portions, editedIndex: portionIndex, newAmount, originalMeal: pm.meal }),
       })
       const { result } = await res.json()
       if (!result) return
-
-      updateDay(di, (d) => {
-        const newMeal = {
-          ...pm.meal!,
-          portions: result.portions,
-          cal: result.cal,
-          protein: result.protein,
-          carbs: result.carbs,
-          fat: result.fat,
-        }
+      updateDay(di, d => {
+        const newMeal = { ...pm.meal!, portions: result.portions, cal: result.cal, protein: result.protein, carbs: result.carbs, fat: result.fat }
         if (mealType === 'dinner') return { ...d, dinner: { ...d.dinner, meal: newMeal } }
-        return { ...d, [who]: { ...(d as any)[who], [mealType]: { ...(d as any)[who][mealType], meal: newMeal } } }
+        return { ...d, [personKey]: { ...d[personKey], [mealType]: { ...d[personKey][mealType], meal: newMeal } } }
       })
-    } catch { /* silently fail, user can re-edit */ }
+    } catch {}
   }
 
   // ── Delete ingredient ──
-  const deleteIngredient = (
-    di: number, who: 'his' | 'her' | 'shared',
-    mealType: 'breakfast' | 'lunch' | 'dinner', portionIndex: number
-  ) => {
-    updateDay(di, (d) => {
-      const pm: PersonMeal = mealType === 'dinner' ? d.dinner : (d as any)[who][mealType]
+  const deleteIngredient = (di: number, mealType: 'breakfast' | 'lunch' | 'dinner', portionIndex: number) => {
+    updateDay(di, d => {
+      const pm: PersonMeal = mealType === 'dinner' ? d.dinner : d[personKey][mealType]
       if (!pm.meal?.portions) return d
       const newPortions = pm.meal.portions.filter((_, i) => i !== portionIndex)
-      const totals = newPortions.reduce((acc, p) => ({
-        cal: acc.cal + p.cal, protein: acc.protein + p.protein,
-        carbs: acc.carbs + p.carbs, fat: acc.fat + p.fat,
-      }), { cal: 0, protein: 0, carbs: 0, fat: 0 })
+      const totals = newPortions.reduce((a, p) => ({ cal: a.cal + p.cal, protein: a.protein + p.protein, carbs: a.carbs + p.carbs, fat: a.fat + p.fat }), { cal: 0, protein: 0, carbs: 0, fat: 0 })
       const newMeal = { ...pm.meal, portions: newPortions, ...totals }
       if (mealType === 'dinner') return { ...d, dinner: { ...d.dinner, meal: newMeal } }
-      return { ...d, [who]: { ...(d as any)[who], [mealType]: { ...(d as any)[who][mealType], meal: newMeal } } }
+      return { ...d, [personKey]: { ...d[personKey], [mealType]: { ...d[personKey][mealType], meal: newMeal } } }
     })
   }
 
@@ -369,213 +268,138 @@ export default function Home() {
   const generateGrocery = async () => {
     setGroceryLoading(true); setTab('grocery')
     try {
-      const res = await fetch('/api/grocery-list', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
-      })
+      const res = await fetch('/api/grocery-list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }) })
       const { items } = await res.json()
       setGrocery(items)
     } catch { alert('Failed to generate grocery list.') }
     setGroceryLoading(false)
   }
 
-  // ── Meal ideas ──
+  // ── Ideas ──
   const generateIdeas = async () => {
     setIdeasLoading(true); setSelectedIdeas({ breakfast: null, lunch: null, dinner: null }); setIdeas(null)
-    const profile = ideasWho === 'his' ? HIM : HER
     const dinnerCal = Math.round(profile.calTarget * 0.33)
     const breakfastCal = Math.round((profile.calTarget - dinnerCal) * 0.42)
     const lunchCal = profile.calTarget - dinnerCal - breakfastCal
     try {
-      const res = await fetch('/api/meal-ideas', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          who: ideasWho, dislikes: dislikes[ideasWho],
-          calBudget: { breakfast: breakfastCal, lunch: lunchCal, dinner: dinnerCal },
-          proteinTarget: profile.proteinTarget,
-        }),
-      })
-      const { ideas: newIdeas } = await res.json()
-      setIdeas(newIdeas)
-    } catch { alert('Failed to generate meal ideas.') }
+      const res = await fetch('/api/meal-ideas', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ who: personKey, dislikes: getMyDislikes(), calBudget: { breakfast: breakfastCal, lunch: lunchCal, dinner: dinnerCal }, proteinTarget: profile.proteinTarget }) })
+      const { ideas: ni } = await res.json()
+      setIdeas(ni)
+    } catch { alert('Failed to generate ideas.') }
     setIdeasLoading(false)
   }
 
   // ── Dislikes ──
-  const addDislike = async (who: 'his' | 'her', item: string) => {
-    const trimmed = item.trim().toLowerCase()
-    if (!trimmed || dislikes[who].includes(trimmed)) return
-    await supabase.from('dislikes').insert({ person: who, item: trimmed })
-    setDislikes(prev => ({ ...prev, [who]: [...prev[who], trimmed] }))
+  const addDislike = async (item: string) => {
+    const t = item.trim().toLowerCase()
+    if (!t || dislikes[personKey].includes(t)) return
+    await supabase.from('dislikes').insert({ person: personKey, item: t })
+    setDislikes(prev => ({ ...prev, [personKey]: [...prev[personKey], t] }))
   }
-  const removeDislike = async (who: 'his' | 'her', item: string) => {
-    await supabase.from('dislikes').delete().eq('person', who).eq('item', item)
-    setDislikes(prev => ({ ...prev, [who]: prev[who].filter(x => x !== item) }))
+  const removeDislike = async (item: string) => {
+    await supabase.from('dislikes').delete().eq('person', personKey).eq('item', item)
+    setDislikes(prev => ({ ...prev, [personKey]: prev[personKey].filter(x => x !== item) }))
   }
 
   // ── Presets ──
-  const saveAsPreset = async (meal: MacroMeal, mealType: 'breakfast' | 'lunch' | 'dinner', who: 'his' | 'her' | 'shared') => {
-    const preset: any = {
-      name: meal.name, meal_type: mealType, who,
-      cal: meal.cal, protein: meal.protein, carbs: meal.carbs, fat: meal.fat,
-      portions: meal.portions || [],
-    }
-    const { data } = await supabase.from('preset_meals').insert(preset).select().single()
-    if (data) {
-      setPresets(prev => [{
-        id: data.id, name: data.name, mealType: data.meal_type, who: data.who,
-        cal: data.cal, protein: data.protein, carbs: data.carbs, fat: data.fat,
-        portions: data.portions || [], createdAt: data.created_at,
-      }, ...prev])
-    }
+  const saveAsPreset = async (meal: MacroMeal, mealType: 'breakfast' | 'lunch' | 'dinner') => {
+    const who = mealType === 'dinner' ? 'shared' : personKey
+    const { data } = await supabase.from('preset_meals').insert({ name: meal.name, meal_type: mealType, who, cal: meal.cal, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, portions: meal.portions || [] }).select().single()
+    if (data) setPresets(prev => [{ id: data.id, name: data.name, mealType: data.meal_type, who: data.who, cal: data.cal, protein: data.protein, carbs: data.carbs, fat: data.fat, portions: data.portions || [], createdAt: data.created_at }, ...prev])
   }
-
-  const deletePreset = async (id: string) => {
-    await supabase.from('preset_meals').delete().eq('id', id)
-    setPresets(prev => prev.filter(p => p.id !== id))
-  }
-
-  const applyPreset = (preset: PresetMeal, di: number, who: 'his' | 'her' | 'shared', mealType: 'breakfast' | 'lunch' | 'dinner') => {
-    const meal: MacroMeal = {
-      name: preset.name, cal: preset.cal, protein: preset.protein,
-      carbs: preset.carbs, fat: preset.fat, portions: preset.portions,
-    }
-    updateDay(di, (d) => {
+  const deletePreset = async (id: string) => { await supabase.from('preset_meals').delete().eq('id', id); setPresets(prev => prev.filter(p => p.id !== id)) }
+  const applyPreset = (preset: PresetMeal, di: number, mealType: 'breakfast' | 'lunch' | 'dinner') => {
+    const meal: MacroMeal = { name: preset.name, cal: preset.cal, protein: preset.protein, carbs: preset.carbs, fat: preset.fat, portions: preset.portions }
+    updateDay(di, d => {
       if (mealType === 'dinner') return { ...d, dinner: { input: preset.name, meal } }
-      return { ...d, [who]: { ...(d as any)[who], [mealType]: { input: preset.name, meal } } }
+      return { ...d, [personKey]: { ...d[personKey], [mealType]: { input: preset.name, meal } } }
     })
     setPresetPicker(null)
   }
 
-  // ── Weight tracking ──
+  // ── Weight ──
   const addWeightEntry = async () => {
     const w = parseFloat(weightInput)
     if (isNaN(w) || w < 50 || w > 500) { alert('Enter a valid weight.'); return }
-    const { data } = await supabase.from('weight_entries').insert({
-      person: weightWho, weight: w, date: weightDate,
-    }).select().single()
-    if (data) {
-      setWeightEntries(prev => [...prev, {
-        id: data.id, person: data.person, weight: data.weight, date: data.date, createdAt: data.created_at,
-      }].sort((a, b) => a.date.localeCompare(b.date)))
-      setWeightInput('')
-    }
+    const { data } = await supabase.from('weight_entries').insert({ person: personKey, weight: w, date: weightDate }).select().single()
+    if (data) { setWeightEntries(prev => [...prev, { id: data.id, person: data.person, weight: data.weight, date: data.date, createdAt: data.created_at }].sort((a, b) => a.date.localeCompare(b.date))); setWeightInput('') }
   }
-
-  const deleteWeightEntry = async (id: string) => {
-    await supabase.from('weight_entries').delete().eq('id', id)
-    setWeightEntries(prev => prev.filter(w => w.id !== id))
-  }
+  const deleteWeightEntry = async (id: string) => { await supabase.from('weight_entries').delete().eq('id', id); setWeightEntries(prev => prev.filter(w => w.id !== id)) }
 
   // ── Computed ──
-  const getDayTotals = (day: DayPlan, who: 'his' | 'her') => {
-    const meals = [day[who].breakfast.meal, day[who].lunch.meal, day.dinner.meal]
-    return meals.reduce((acc, m) => ({
-      cal: acc.cal + (m?.cal || 0), protein: acc.protein + (m?.protein || 0),
-      carbs: acc.carbs + (m?.carbs || 0), fat: acc.fat + (m?.fat || 0),
-    }), { cal: 0, protein: 0, carbs: 0, fat: 0 })
+  const getDayTotals = (day: DayPlan) => {
+    const meals = [day[personKey].breakfast.meal, day[personKey].lunch.meal, day.dinner.meal]
+    return meals.reduce((a, m) => ({ cal: a.cal + (m?.cal || 0), protein: a.protein + (m?.protein || 0), carbs: a.carbs + (m?.carbs || 0), fat: a.fat + (m?.fat || 0) }), { cal: 0, protein: 0, carbs: 0, fat: 0 })
   }
 
-  const getWeeklyProgress = (who: 'his' | 'her') => {
-    const profile = who === 'his' ? HIM : HER
-    let totalDays = 0, onTrackDays = 0
-    plan.days.forEach(day => {
-      const totals = getDayTotals(day, who)
-      if (totals.cal > 0) { totalDays++; if (totals.cal <= profile.calTarget + 50) onTrackDays++ }
-    })
-    return { totalDays, onTrackDays }
+  const getWeeklyProgress = () => {
+    let total = 0, onTrack = 0
+    plan.days.forEach(day => { const t = getDayTotals(day); if (t.cal > 0) { total++; if (t.cal <= profile.calTarget + 50) onTrack++ } })
+    return { total, onTrack }
   }
 
-  const getWeightStats = (who: 'his' | 'her') => {
-    const entries = weightEntries.filter(e => e.person === who).sort((a, b) => a.date.localeCompare(b.date))
-    if (entries.length === 0) return null
-    const latest = entries[entries.length - 1]
-    const first = entries[0]
-    const totalChange = latest.weight - first.weight
-    // 7-day average
-    const last7 = entries.slice(-7)
-    const avg7 = last7.reduce((s, e) => s + e.weight, 0) / last7.length
-    // 30-day average
-    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    const last30 = entries.filter(e => new Date(e.date) >= thirtyDaysAgo)
+  const getWeightStats = () => {
+    const entries = weightEntries.filter(e => e.person === personKey).sort((a, b) => a.date.localeCompare(b.date))
+    if (!entries.length) return null
+    const latest = entries[entries.length - 1], first = entries[0]
+    const last7 = entries.slice(-7), avg7 = last7.reduce((s, e) => s + e.weight, 0) / last7.length
+    const thirtyAgo = new Date(); thirtyAgo.setDate(thirtyAgo.getDate() - 30)
+    const last30 = entries.filter(e => new Date(e.date) >= thirtyAgo)
     const avg30 = last30.length > 0 ? last30.reduce((s, e) => s + e.weight, 0) / last30.length : avg7
-    return { latest: latest.weight, first: first.weight, totalChange, avg7: Math.round(avg7 * 10) / 10, avg30: Math.round(avg30 * 10) / 10, count: entries.length }
+    return { latest: latest.weight, first: first.weight, totalChange: latest.weight - first.weight, avg7: Math.round(avg7 * 10) / 10, avg30: Math.round(avg30 * 10) / 10, count: entries.length }
   }
 
   const GROCERY_CATEGORIES = ['Proteins', 'Produce', 'Dairy & Eggs', 'Pantry & Dry Goods', 'Condiments & Sauces', 'Other']
 
-  if (loading) return <div className={styles.loadingScreen}><div className={styles.spinner} /><p>Loading your meal planner...</p></div>
+  if (loading) return <div className={styles.loadingScreen}><div className={styles.spinner} /><p>Loading...</p></div>
 
-  const hisProgress = getWeeklyProgress('his')
-  const herProgress = getWeeklyProgress('her')
+  const progress = getWeeklyProgress()
+  const wStats = getWeightStats()
 
   return (
     <div className={styles.app}>
+      {/* HEADER */}
       <div className={styles.header}>
-        <h1>Meal planner</h1>
-        <p>High-protein weekly meals for two · weight loss mode</p>
+        <div className={styles.headerTop}>
+          <div>
+            <h1>{profile.emoji} {profile.label}'s Meal Planner</h1>
+            <p>{profile.calTarget.toLocaleString()} cal · {profile.proteinTarget}g protein daily</p>
+          </div>
+          <button className={styles.switchBtn} onClick={onSwitch}>Switch user</button>
+        </div>
+        {progress.total > 0 && (
+          <div className={styles.headerProgress}>
+            <div className={styles.progressBar}>
+              <div className={styles.progressFill} style={{ width: `${(progress.onTrack / 7) * 100}%` }} />
+              <span className={styles.progressText}>{progress.onTrack}/7 days on track this week</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* TABS */}
       <div className={styles.tabs}>
-        {([
-          ['plan', '📋 Plan'],
-          ['ideas', '💡 Ideas'],
-          ['presets', '⭐ Presets'],
-          ['dislikes', '🚫 Dislikes'],
-          ['grocery', '🛒 Grocery'],
-          ['weight', '⚖️ Weight'],
-        ] as [Tab, string][]).map(([t, label]) => (
+        {([['plan', '📋 Plan'], ['ideas', '💡 Ideas'], ['presets', '⭐ Presets'], ['dislikes', '🚫 Dislikes'], ['grocery', '🛒 Grocery'], ['weight', '⚖️ Weight']] as [Tab, string][]).map(([t, label]) => (
           <button key={t} className={`${styles.tab} ${tab === t ? styles.active : ''}`} onClick={() => setTab(t)}>{label}</button>
         ))}
       </div>
 
-      {/* ═══════════ PLAN TAB ═══════════ */}
+      {/* ═══ PLAN TAB ═══ */}
       {tab === 'plan' && (
         <div>
-          <div className={styles.statsBar}>
-            <div className={styles.statCard}>
-              <div className={styles.statLabel}>His daily target</div>
-              <div className={styles.statValue}>1,820 <span className={styles.statUnit}>cal</span></div>
-              <div className={styles.statSub}>160g protein · 5′9″ 215 lbs</div>
-              {hisProgress.totalDays > 0 && (
-                <div className={styles.progressBar}>
-                  <div className={styles.progressFill} style={{ width: `${(hisProgress.onTrackDays / 7) * 100}%` }} />
-                  <span className={styles.progressText}>{hisProgress.onTrackDays}/7 days on track</span>
-                </div>
-              )}
-            </div>
-            <div className={styles.statCard}>
-              <div className={styles.statLabel}>Her daily target</div>
-              <div className={styles.statValue}>1,490 <span className={styles.statUnit}>cal</span></div>
-              <div className={styles.statSub}>130g protein · 5′7″ 175 lbs</div>
-              {herProgress.totalDays > 0 && (
-                <div className={styles.progressBar}>
-                  <div className={styles.progressFill} style={{ width: `${(herProgress.onTrackDays / 7) * 100}%` }} />
-                  <span className={styles.progressText}>{herProgress.onTrackDays}/7 days on track</span>
-                </div>
-              )}
-            </div>
-            <div className={`${styles.statCard} ${styles.goalCard}`}>
-              <div className={styles.statLabel}>Weekly goal</div>
-              <div className={styles.statValue}>~1 <span className={styles.statUnit}>lb/wk</span></div>
-              <div className={styles.statSub}>500 cal deficit each</div>
-            </div>
-          </div>
-
           <div className={styles.howTo}>
             <span className={styles.howToIcon}>→</span>
-            <div>
-              <strong>How it works:</strong> Enter dinner first. Then click <strong>"Plan B+L"</strong> to enter both breakfast &amp; lunch — Claude auto-calculates portions so you don't exceed your calorie goal. You can edit amounts or remove ingredients after. Save any meal as a preset to reuse later.
-            </div>
+            <div><strong>How it works:</strong> Enter dinner first (shared with {user === 'evan' ? 'Liv' : 'Evan'}). Then add your breakfast &amp; lunch. Claude calculates exact portions to hit your {profile.calTarget} cal target. 🔒 Lock a meal to fix it, then recalculate the other to fill your remaining budget.</div>
           </div>
 
-          {/* Day cards */}
           <div className={styles.dayGrid}>
             {plan.days.map((day, di) => {
-              const hisTotals = getDayTotals(day, 'his')
-              const herTotals = getDayTotals(day, 'her')
+              const totals = getDayTotals(day)
               const isOpen = expandedDay === di
+              const dinnerCal = day.dinner.meal?.cal || 0
+              const remaining = profile.calTarget - dinnerCal
+              const overBudget = totals.cal > profile.calTarget + 50
 
               return (
                 <div key={day.day} className={`${styles.dayCard} ${isOpen ? styles.dayCardOpen : ''}`}>
@@ -585,14 +409,9 @@ export default function Home() {
                       <span className={styles.dayTheme}>{day.theme}</span>
                     </div>
                     <div className={styles.dayHeaderRight}>
-                      {hisTotals.cal > 0 && (
-                        <span className={`${styles.dayTotalPill} ${hisTotals.cal > HIM.calTarget + 50 ? styles.overBudget : ''}`}>
-                          Him {hisTotals.cal} · {hisTotals.protein}g P
-                        </span>
-                      )}
-                      {herTotals.cal > 0 && (
-                        <span className={`${styles.dayTotalPill} ${herTotals.cal > HER.calTarget + 50 ? styles.overBudget : ''}`}>
-                          Her {herTotals.cal} · {herTotals.protein}g P
+                      {totals.cal > 0 && (
+                        <span className={`${styles.dayTotalPill} ${overBudget ? styles.overBudget : ''}`}>
+                          {totals.cal} cal · {totals.protein}g P
                         </span>
                       )}
                       <span className={styles.chevron}>{isOpen ? '▲' : '▼'}</span>
@@ -601,9 +420,9 @@ export default function Home() {
 
                   {isOpen && (
                     <div className={styles.dayBody}>
-                      {/* DINNER */}
-                      <div className={styles.dinnerSection}>
-                        <div className={styles.sectionLabel}>🍽️ Shared dinner — enter this first</div>
+                      {/* DINNER (shared) */}
+                      <div className={styles.mealBlock}>
+                        <div className={styles.sectionLabel}>🍽️ Dinner (shared with {user === 'evan' ? 'Liv' : 'Evan'})</div>
                         <div className={styles.mealInputWithPreset}>
                           <MealInput
                             placeholder="e.g. sirloin steaks and baked potatoes"
@@ -611,96 +430,84 @@ export default function Home() {
                             meal={day.dinner.meal}
                             calcKey={`${di}-shared-dinner`}
                             calculating={calculating}
-                            onSubmit={(input) => calculateMeal(di, 'shared', 'dinner', input)}
-                            onChange={(v) => updateDay(di, d => ({ ...d, dinner: { ...d.dinner, input: v } }))}
+                            onSubmit={input => calculateMeal(di, 'dinner', input)}
+                            onChange={v => updateDay(di, d => ({ ...d, dinner: { ...d.dinner, input: v } }))}
                             editable={!isLocked(di, 'shared', 'dinner')}
                             locked={isLocked(di, 'shared', 'dinner')}
                             onToggleLock={day.dinner.meal ? () => toggleLock(di, 'shared', 'dinner') : undefined}
-                            onRecalculate={(pi, amt) => recalculatePortions(di, 'shared', 'dinner', pi, amt)}
-                            onDeleteIngredient={(pi) => deleteIngredient(di, 'shared', 'dinner', pi)}
-                            onSavePreset={day.dinner.meal ? () => saveAsPreset(day.dinner.meal!, 'dinner', 'shared') : undefined}
-                            onCopy={day.dinner.meal ? () => setCopyTarget({ open: true, meal: day.dinner, who: 'shared', mealType: 'dinner' }) : undefined}
+                            onRecalculate={(pi, amt) => recalculatePortions(di, 'dinner', pi, amt)}
+                            onDeleteIngredient={pi => deleteIngredient(di, 'dinner', pi)}
+                            onSavePreset={day.dinner.meal ? () => saveAsPreset(day.dinner.meal!, 'dinner') : undefined}
+                            onCopy={day.dinner.meal ? () => setCopyTarget({ meal: day.dinner, who: 'shared', mealType: 'dinner' }) : undefined}
                           />
-                          <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ open: true, di, who: 'shared', mealType: 'dinner' })} title="Use a preset">⭐</button>
+                          <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ di, mealType: 'dinner' })}>⭐</button>
                         </div>
                       </div>
 
-                      {/* PER PERSON */}
-                      <div className={styles.personGrid}>
-                        {(['his', 'her'] as const).map(who => {
-                          const profile = who === 'his' ? HIM : HER
-                          const dinnerCal = day.dinner.meal?.cal || 0
-                          const remaining = profile.calTarget - dinnerCal
-                          const totals = getDayTotals(day, who)
-                          const overBudget = totals.cal > profile.calTarget + 50
+                      {/* REMAINING BUDGET */}
+                      {dinnerCal > 0 && (
+                        <div className={`${styles.budgetBar} ${remaining < 0 ? styles.budgetOver : ''}`}>
+                          {remaining > 0 ? `${remaining} cal remaining for breakfast + lunch` : `${Math.abs(remaining)} cal over budget!`}
+                        </div>
+                      )}
 
-                          return (
-                            <div key={who} className={styles.personCol}>
-                              <div className={styles.personHeader}>
-                                <span className={styles.personLabel}>{profile.label}</span>
-                                <div className={styles.personHeaderRight}>
-                                  {dinnerCal > 0 && (
-                                    <span className={`${styles.remainingBadge} ${remaining < 0 ? styles.overBudgetBadge : ''}`}>
-                                      {remaining > 0 ? `${remaining} cal left` : `${Math.abs(remaining)} over!`}
-                                    </span>
-                                  )}
-                                  {dinnerCal > 0 && (
-                                    <button
-                                      className={styles.planBLBtn}
-                                      onClick={() => setMealDialog({
-                                        open: true, di, who,
-                                        breakfastInput: day[who].breakfast.input,
-                                        lunchInput: day[who].lunch.input,
-                                      })}
-                                    >
-                                      Plan B+L
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              {(['breakfast', 'lunch'] as const).map(mt => (
-                                <div key={mt} className={styles.mealSection}>
-                                  <div className={styles.mealTypeLabel}>{mt.charAt(0).toUpperCase() + mt.slice(1)}</div>
-                                  <div className={styles.mealInputWithPreset}>
-                                    <MealInput
-                                      placeholder={mt === 'breakfast'
-                                        ? 'e.g. scrambled eggs with turkey and avocado'
-                                        : 'e.g. taco salad with ground beef, lettuce, cheese'
-                                      }
-                                      value={day[who][mt].input}
-                                      meal={day[who][mt].meal}
-                                      calcKey={`${di}-${who}-${mt}`}
-                                      calculating={calculating}
-                                      onSubmit={(input) => calculateMeal(di, who, mt, input)}
-                                      onChange={(v) => updateDay(di, d => ({
-                                        ...d, [who]: { ...d[who], [mt]: { ...d[who][mt], input: v } }
-                                      }))}
-                                      editable={!isLocked(di, who, mt)}
-                                      locked={isLocked(di, who, mt)}
-                                      onToggleLock={day[who][mt].meal ? () => toggleLock(di, who, mt) : undefined}
-                                      onRecalculate={(pi, amt) => recalculatePortions(di, who, mt, pi, amt)}
-                                      onDeleteIngredient={(pi) => deleteIngredient(di, who, mt, pi)}
-                                      onSavePreset={day[who][mt].meal ? () => saveAsPreset(day[who][mt].meal!, mt, who) : undefined}
-                                      onCopy={day[who][mt].meal ? () => setCopyTarget({ open: true, meal: day[who][mt], who, mealType: mt }) : undefined}
-                                    />
-                                    <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ open: true, di, who, mealType: mt })} title="Use a preset">⭐</button>
-                                  </div>
-                                </div>
-                              ))}
-
-                              {totals.cal > 0 && (
-                                <div className={`${styles.personTotals} ${overBudget ? styles.personTotalsOver : ''}`}>
-                                  <span>Total: <strong>{totals.cal} cal</strong> {overBudget && <span className={styles.overIcon}>⚠️</span>}</span>
-                                  <span>P: <strong className={totals.protein >= profile.proteinTarget ? styles.proteinGood : styles.proteinLow}>{totals.protein}g / {profile.proteinTarget}g</strong></span>
-                                  <span>C: <strong>{totals.carbs}g</strong></span>
-                                  <span>F: <strong>{totals.fat}g</strong></span>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
+                      {/* BREAKFAST */}
+                      <div className={styles.mealBlock}>
+                        <div className={styles.sectionLabel}>🌅 Breakfast</div>
+                        <div className={styles.mealInputWithPreset}>
+                          <MealInput
+                            placeholder="e.g. scrambled eggs with turkey sausage"
+                            value={day[personKey].breakfast.input}
+                            meal={day[personKey].breakfast.meal}
+                            calcKey={`${di}-${personKey}-breakfast`}
+                            calculating={calculating}
+                            onSubmit={input => calculateMeal(di, 'breakfast', input)}
+                            onChange={v => updateDay(di, d => ({ ...d, [personKey]: { ...d[personKey], breakfast: { ...d[personKey].breakfast, input: v } } }))}
+                            editable={!isLocked(di, personKey, 'breakfast')}
+                            locked={isLocked(di, personKey, 'breakfast')}
+                            onToggleLock={day[personKey].breakfast.meal ? () => toggleLock(di, personKey, 'breakfast') : undefined}
+                            onRecalculate={(pi, amt) => recalculatePortions(di, 'breakfast', pi, amt)}
+                            onDeleteIngredient={pi => deleteIngredient(di, 'breakfast', pi)}
+                            onSavePreset={day[personKey].breakfast.meal ? () => saveAsPreset(day[personKey].breakfast.meal!, 'breakfast') : undefined}
+                            onCopy={day[personKey].breakfast.meal ? () => setCopyTarget({ meal: day[personKey].breakfast, who: personKey, mealType: 'breakfast' }) : undefined}
+                          />
+                          <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ di, mealType: 'breakfast' })}>⭐</button>
+                        </div>
                       </div>
+
+                      {/* LUNCH */}
+                      <div className={styles.mealBlock}>
+                        <div className={styles.sectionLabel}>☀️ Lunch</div>
+                        <div className={styles.mealInputWithPreset}>
+                          <MealInput
+                            placeholder="e.g. taco salad with ground beef, lettuce, cheese"
+                            value={day[personKey].lunch.input}
+                            meal={day[personKey].lunch.meal}
+                            calcKey={`${di}-${personKey}-lunch`}
+                            calculating={calculating}
+                            onSubmit={input => calculateMeal(di, 'lunch', input)}
+                            onChange={v => updateDay(di, d => ({ ...d, [personKey]: { ...d[personKey], lunch: { ...d[personKey].lunch, input: v } } }))}
+                            editable={!isLocked(di, personKey, 'lunch')}
+                            locked={isLocked(di, personKey, 'lunch')}
+                            onToggleLock={day[personKey].lunch.meal ? () => toggleLock(di, personKey, 'lunch') : undefined}
+                            onRecalculate={(pi, amt) => recalculatePortions(di, 'lunch', pi, amt)}
+                            onDeleteIngredient={pi => deleteIngredient(di, 'lunch', pi)}
+                            onSavePreset={day[personKey].lunch.meal ? () => saveAsPreset(day[personKey].lunch.meal!, 'lunch') : undefined}
+                            onCopy={day[personKey].lunch.meal ? () => setCopyTarget({ meal: day[personKey].lunch, who: personKey, mealType: 'lunch' }) : undefined}
+                          />
+                          <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ di, mealType: 'lunch' })}>⭐</button>
+                        </div>
+                      </div>
+
+                      {/* DAY TOTALS */}
+                      {totals.cal > 0 && (
+                        <div className={`${styles.dayTotals} ${overBudget ? styles.dayTotalsOver : ''}`}>
+                          <span>Total: <strong>{totals.cal}</strong> / {profile.calTarget} cal {overBudget && '⚠️'}</span>
+                          <span>P: <strong className={totals.protein >= profile.proteinTarget ? styles.proteinGood : styles.proteinLow}>{totals.protein}g</strong> / {profile.proteinTarget}g</span>
+                          <span>C: <strong>{totals.carbs}g</strong></span>
+                          <span>F: <strong>{totals.fat}g</strong></span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -711,40 +518,34 @@ export default function Home() {
         </div>
       )}
 
-      {/* ═══════════ MEAL IDEAS TAB ═══════════ */}
+      {/* ═══ IDEAS TAB ═══ */}
       {tab === 'ideas' && (
-        <div className={styles.ideasTab}>
-          <div className={styles.ideasIntro}>
-            <h2>Meal Ideas Generator</h2>
-            <p>AI-generated breakfast, lunch &amp; dinner ideas that fit your calorie/macro targets with dislikes excluded.</p>
+        <div>
+          <div className={styles.sectionIntro}>
+            <h2>Meal Ideas for {profile.label}</h2>
+            <p>AI-generated meals that fit your {profile.calTarget} cal target with your dislikes excluded.</p>
           </div>
-          <div className={styles.ideasControls}>
-            <div className={styles.ideasToggle}>
-              <button className={`${styles.toggleBtn} ${ideasWho === 'his' ? styles.toggleActive : ''}`} onClick={() => setIdeasWho('his')}>Him · 1,820 cal</button>
-              <button className={`${styles.toggleBtn} ${ideasWho === 'her' ? styles.toggleActive : ''}`} onClick={() => setIdeasWho('her')}>Her · 1,490 cal</button>
+          {getMyDislikes().length > 0 && (
+            <div className={styles.ideasExcluding}>
+              <span className={styles.excludeLabel}>Excluding:</span>
+              {getMyDislikes().map(d => <span key={d} className={styles.excludeTag}>{d}</span>)}
             </div>
-            {dislikes[ideasWho].length > 0 && (
-              <div className={styles.ideasExcluding}>
-                <span className={styles.excludeLabel}>Excluding:</span>
-                {dislikes[ideasWho].map(d => <span key={d} className={styles.excludeTag}>{d}</span>)}
-              </div>
-            )}
-            <button className={styles.generateIdeasBtn} onClick={generateIdeas} disabled={ideasLoading}>
-              {ideasLoading ? <><span className={styles.btnSpinner} /> Generating...</> : '✨ Generate meal ideas'}
-            </button>
-          </div>
-          {ideasLoading && <div className={styles.loadingState}><div className={styles.spinner} /><p>Creating personalized meal ideas...</p></div>}
-          {!ideasLoading && !ideas && <div className={styles.emptyState}><div className={styles.emptyIcon}>💡</div><p>Choose who you're planning for, then generate ideas that fit your macro targets.</p></div>}
+          )}
+          <button className={styles.generateIdeasBtn} onClick={generateIdeas} disabled={ideasLoading}>
+            {ideasLoading ? <><span className={styles.btnSpinner} /> Generating...</> : '✨ Generate meal ideas'}
+          </button>
+          {ideasLoading && <div className={styles.loadingState}><div className={styles.spinner} /><p>Creating ideas for {profile.label}...</p></div>}
+          {!ideasLoading && !ideas && <div className={styles.emptyState}><div className={styles.emptyIcon}>💡</div><p>Hit generate to get personalized meal ideas.</p></div>}
           {!ideasLoading && ideas && (
             <div className={styles.ideasResults}>
-              {(['breakfast', 'lunch', 'dinner'] as const).map(mealType => (
-                <div key={mealType} className={styles.ideasMealSection}>
-                  <h3 className={styles.ideasMealTitle}>{mealType === 'breakfast' ? '🌅' : mealType === 'lunch' ? '☀️' : '🌙'} {mealType.charAt(0).toUpperCase() + mealType.slice(1)}</h3>
+              {(['breakfast', 'lunch', 'dinner'] as const).map(mt => (
+                <div key={mt} className={styles.ideasMealSection}>
+                  <h3 className={styles.ideasMealTitle}>{mt === 'breakfast' ? '🌅' : mt === 'lunch' ? '☀️' : '🌙'} {mt.charAt(0).toUpperCase() + mt.slice(1)}</h3>
                   <div className={styles.ideasGrid}>
-                    {ideas[mealType]?.map((idea: MealIdea, idx: number) => {
-                      const isSelected = selectedIdeas[mealType] === idx
+                    {ideas[mt]?.map((idea: MealIdea, idx: number) => {
+                      const sel = selectedIdeas[mt] === idx
                       return (
-                        <div key={idx} className={`${styles.ideaCard} ${isSelected ? styles.ideaCardSelected : ''}`} onClick={() => setSelectedIdeas(prev => ({ ...prev, [mealType]: isSelected ? null : idx }))}>
+                        <div key={idx} className={`${styles.ideaCard} ${sel ? styles.ideaCardSelected : ''}`} onClick={() => setSelectedIdeas(p => ({ ...p, [mt]: sel ? null : idx }))}>
                           <div className={styles.ideaName}>{idea.name}</div>
                           <div className={styles.ideaDesc}>{idea.description}</div>
                           <div className={styles.ideaMacros}>
@@ -753,67 +554,30 @@ export default function Home() {
                             <span>C <strong>{idea.carbs}g</strong></span>
                             <span>F <strong>{idea.fat}g</strong></span>
                           </div>
-                          {isSelected && idea.portions && (
+                          {sel && idea.portions && (
                             <div className={styles.ideaPortions}>
-                              <div className={styles.ideaPortionsTitle}>Ingredients</div>
                               {idea.portions.map((p, pi) => (
-                                <div key={pi} className={styles.ideaPortionRow}>
-                                  <span>{p.ingredient}</span>
-                                  <span className={styles.ideaPortionAmt}>{p.amount}</span>
-                                  <span className={styles.ideaPortionCal}>{p.cal} cal</span>
-                                </div>
+                                <div key={pi} className={styles.ideaPortionRow}><span>{p.ingredient}</span><span className={styles.ideaPortionAmt}>{p.amount}</span><span className={styles.ideaPortionCal}>{p.cal} cal</span></div>
                               ))}
                             </div>
                           )}
-                          {isSelected && <div className={styles.ideaSelectedBadge}>✓ Selected</div>}
+                          {sel && <div className={styles.ideaSelectedBadge}>✓</div>}
                         </div>
                       )
                     })}
                   </div>
                 </div>
               ))}
-              {/* Daily total */}
-              {(selectedIdeas.breakfast !== null || selectedIdeas.lunch !== null || selectedIdeas.dinner !== null) && (
-                <div className={styles.ideasDailyTotal}>
-                  <h4>Selected day total</h4>
-                  <div className={styles.ideasTotalMacros}>
-                    {(() => {
-                      const profile = ideasWho === 'his' ? HIM : HER
-                      let tc = 0, tp = 0, tca = 0, tf = 0
-                      ;(['breakfast','lunch','dinner'] as const).forEach(mt => {
-                        const idx = selectedIdeas[mt]
-                        if (idx !== null && ideas[mt]?.[idx]) { const m = ideas[mt][idx]; tc += m.cal; tp += m.protein; tca += m.carbs; tf += m.fat }
-                      })
-                      return (
-                        <>
-                          <span className={tc <= profile.calTarget ? styles.totalGood : styles.totalOver}><strong>{tc}</strong> / {profile.calTarget} cal</span>
-                          <span className={tp >= profile.proteinTarget ? styles.proteinGood : styles.proteinLow}>P: <strong>{tp}g</strong> / {profile.proteinTarget}g</span>
-                          <span>C: <strong>{tca}g</strong></span>
-                          <span>F: <strong>{tf}g</strong></span>
-                        </>
-                      )
-                    })()}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
       )}
 
-      {/* ═══════════ PRESETS TAB ═══════════ */}
+      {/* ═══ PRESETS TAB ═══ */}
       {tab === 'presets' && (
         <div>
-          <div className={styles.presetsIntro}>
-            <h2>Saved Meal Presets</h2>
-            <p>Meals you've saved for quick reuse. Click any preset to see the full ingredient breakdown.</p>
-          </div>
-          {presets.length === 0 ? (
-            <div className={styles.emptyState}>
-              <div className={styles.emptyIcon}>⭐</div>
-              <p>No presets saved yet. Calculate a meal on the Plan tab, then click "Save as preset" to add it here.</p>
-            </div>
-          ) : (
+          <div className={styles.sectionIntro}><h2>Saved Presets</h2><p>Click to expand ingredients. Available to both users.</p></div>
+          {presets.length === 0 ? <div className={styles.emptyState}><div className={styles.emptyIcon}>⭐</div><p>No presets yet. Save meals from the Plan tab.</p></div> : (
             <div className={styles.presetsList}>
               {(['breakfast', 'lunch', 'dinner'] as const).map(mt => {
                 const items = presets.filter(p => p.mealType === mt)
@@ -821,41 +585,24 @@ export default function Home() {
                 return (
                   <div key={mt} className={styles.presetCategory}>
                     <h3>{mt === 'breakfast' ? '🌅' : mt === 'lunch' ? '☀️' : '🌙'} {mt.charAt(0).toUpperCase() + mt.slice(1)}</h3>
-                    <div className={styles.presetCards}>
-                      {items.map(p => (
-                        <div key={p.id} className={`${styles.presetCard} ${expandedPreset === p.id ? styles.presetCardExpanded : ''}`}>
-                          <div className={styles.presetCardHeader} onClick={() => setExpandedPreset(expandedPreset === p.id ? null : p.id)}>
-                            <div>
-                              <div className={styles.presetName}>{p.name}</div>
-                              <div className={styles.presetMeta}>
-                                <span>{p.who === 'shared' ? 'Shared' : p.who === 'his' ? 'Him' : 'Her'}</span>
-                                <span><strong>{p.cal}</strong> cal</span>
-                                <span className={styles.proteinVal}>P {p.protein}g</span>
-                                <span>C {p.carbs}g</span>
-                                <span>F {p.fat}g</span>
-                              </div>
-                            </div>
-                            <span className={styles.chevron}>{expandedPreset === p.id ? '▲' : '▼'}</span>
+                    {items.map(p => (
+                      <div key={p.id} className={`${styles.presetCard} ${expandedPreset === p.id ? styles.presetCardExpanded : ''}`}>
+                        <div className={styles.presetCardHeader} onClick={() => setExpandedPreset(expandedPreset === p.id ? null : p.id)}>
+                          <div><div className={styles.presetName}>{p.name}</div>
+                            <div className={styles.presetMeta}><span>{p.who === 'shared' ? 'Shared' : p.who === 'his' ? 'Evan' : 'Liv'}</span> · <span><strong>{p.cal}</strong> cal</span> · <span className={styles.proteinVal}>P {p.protein}g</span></div>
                           </div>
-                          {expandedPreset === p.id && (
-                            <div className={styles.presetBody}>
-                              {p.portions.length > 0 && (
-                                <div className={styles.presetPortions}>
-                                  {p.portions.map((pt, i) => (
-                                    <div key={i} className={styles.presetPortionRow}>
-                                      <span>{pt.ingredient}</span>
-                                      <span className={styles.presetPortionAmt}>{pt.amount}</span>
-                                      <span className={styles.presetPortionCal}>{pt.cal} cal · {pt.protein}g P</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              <button className={styles.deletePresetBtn} onClick={() => deletePreset(p.id)}>Delete preset</button>
-                            </div>
-                          )}
+                          <span className={styles.chevron}>{expandedPreset === p.id ? '▲' : '▼'}</span>
                         </div>
-                      ))}
-                    </div>
+                        {expandedPreset === p.id && (
+                          <div className={styles.presetBody}>
+                            {p.portions.map((pt, i) => (
+                              <div key={i} className={styles.presetPortionRow}><span>{pt.ingredient}</span><span>{pt.amount}</span><span className={styles.portionCal}>{pt.cal} cal</span></div>
+                            ))}
+                            <button className={styles.deletePresetBtn} onClick={() => deletePreset(p.id)}>Delete</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )
               })}
@@ -864,294 +611,126 @@ export default function Home() {
         </div>
       )}
 
-      {/* ═══════════ DISLIKES TAB ═══════════ */}
+      {/* ═══ DISLIKES TAB ═══ */}
       {tab === 'dislikes' && (
         <div>
-          <div className={styles.dislikesIntro}><p>Foods listed here will be excluded from meal ideas and suggestions.</p></div>
-          <div className={styles.dislikesGrid}>
-            {(['his', 'her'] as const).map(who => (
-              <div key={who} className={styles.dislikeCol}>
-                <h2>{who === 'his' ? '🙋‍♂️ His dislikes' : '🙋‍♀️ Her dislikes'}</h2>
-                <div className={styles.dislikeInputRow}>
-                  <input type="text" value={who === 'his' ? hisInput : herInput} placeholder="Add a food..."
-                    onChange={e => who === 'his' ? setHisInput(e.target.value) : setHerInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { const val = who === 'his' ? hisInput : herInput; addDislike(who, val); who === 'his' ? setHisInput('') : setHerInput('') } }}
-                  />
-                  <button className={styles.addBtn} onClick={() => { const val = who === 'his' ? hisInput : herInput; addDislike(who, val); who === 'his' ? setHisInput('') : setHerInput('') }}>Add</button>
-                </div>
-                <div className={styles.dislikeList}>
-                  {dislikes[who].length === 0
-                    ? <span className={styles.noDislikes}>None added yet</span>
-                    : dislikes[who].map(item => (
-                      <span key={item} className={styles.dislikeTag}>{item}<button onClick={() => removeDislike(who, item)}>&times;</button></span>
-                    ))
-                  }
-                </div>
-                <div className={styles.dislikeCount}>{dislikes[who].length} item{dislikes[who].length !== 1 ? 's' : ''}</div>
-              </div>
+          <div className={styles.sectionIntro}><h2>{profile.label}'s Dislikes</h2><p>These foods will never appear in your meal calculations or ideas.</p></div>
+          <div className={styles.dislikeInputRow}>
+            <input type="text" value={dislikeInput} placeholder="Add a food..." onChange={e => setDislikeInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { addDislike(dislikeInput); setDislikeInput('') } }} />
+            <button className={styles.addBtn} onClick={() => { addDislike(dislikeInput); setDislikeInput('') }}>Add</button>
+          </div>
+          <div className={styles.dislikeList}>
+            {getMyDislikes().length === 0 ? <span className={styles.noDislikes}>None added yet</span> : getMyDislikes().map(item => (
+              <span key={item} className={styles.dislikeTag}>{item}<button onClick={() => removeDislike(item)}>×</button></span>
             ))}
           </div>
+          <div className={styles.dislikeCount}>{getMyDislikes().length} item{getMyDislikes().length !== 1 ? 's' : ''}</div>
         </div>
       )}
 
-      {/* ═══════════ GROCERY TAB ═══════════ */}
+      {/* ═══ GROCERY TAB ═══ */}
       {tab === 'grocery' && (
         <div>
           <div className={styles.groceryHeader}>
-            <p>Based on your current week's meal plan.</p>
+            <p>Grocery list for both Evan &amp; Liv's meals this week.</p>
             <button className={styles.regenBtn} onClick={generateGrocery} disabled={groceryLoading}>{groceryLoading ? 'Generating...' : '↺ Regenerate'}</button>
           </div>
-          {groceryLoading && <div className={styles.loadingState}><div className={styles.spinner} /><p>Building your grocery list...</p></div>}
-          {!groceryLoading && !grocery && <div className={styles.emptyState}><div className={styles.emptyIcon}>🛒</div><p>Fill in your meals, then click "Generate grocery list" on the plan tab.</p></div>}
+          {groceryLoading && <div className={styles.loadingState}><div className={styles.spinner} /><p>Building list...</p></div>}
+          {!groceryLoading && !grocery && <div className={styles.emptyState}><div className={styles.emptyIcon}>🛒</div><p>Fill in meals, then generate.</p></div>}
           {!groceryLoading && grocery && (
             <div className={styles.groceryList}>
               {GROCERY_CATEGORIES.map(cat => {
                 const items = grocery.filter(i => i.category === cat)
                 if (!items.length) return null
-                return (
-                  <div key={cat} className={styles.groceryCategory}>
-                    <h3>{cat}</h3>
-                    <div className={styles.groceryItems}>
-                      {items.map((item, i) => (
-                        <div key={i} className={styles.groceryItem}>
-                          <span className={styles.groceryName}>{item.name}</span>
-                          <span className={styles.groceryAmount}>{item.amount}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )
+                return (<div key={cat} className={styles.groceryCategory}><h3>{cat}</h3><div className={styles.groceryItems}>{items.map((item, i) => (<div key={i} className={styles.groceryItem}><span className={styles.groceryName}>{item.name}</span><span className={styles.groceryAmount}>{item.amount}</span></div>))}</div></div>)
               })}
             </div>
           )}
         </div>
       )}
 
-      {/* ═══════════ WEIGHT TAB ═══════════ */}
+      {/* ═══ WEIGHT TAB ═══ */}
       {tab === 'weight' && (
         <div>
-          <div className={styles.weightIntro}>
-            <h2>Weight Tracker</h2>
-            <p>Log your weight regularly to track progress over time. We'll calculate running averages so daily fluctuations don't stress you out.</p>
-          </div>
-
-          {/* Input form */}
+          <div className={styles.sectionIntro}><h2>{profile.label}'s Weight Tracker</h2><p>Log daily to track trends. We average so daily fluctuations don't stress you.</p></div>
           <div className={styles.weightForm}>
-            <div className={styles.ideasToggle}>
-              <button className={`${styles.toggleBtn} ${weightWho === 'his' ? styles.toggleActive : ''}`} onClick={() => setWeightWho('his')}>Him</button>
-              <button className={`${styles.toggleBtn} ${weightWho === 'her' ? styles.toggleActive : ''}`} onClick={() => setWeightWho('her')}>Her</button>
-            </div>
             <div className={styles.weightInputRow}>
               <input type="date" value={weightDate} onChange={e => setWeightDate(e.target.value)} className={styles.weightDateInput} />
               <div className={styles.weightNumInput}>
-                <input type="number" value={weightInput} onChange={e => setWeightInput(e.target.value)} placeholder="Weight" step="0.1"
-                  onKeyDown={e => { if (e.key === 'Enter') addWeightEntry() }}
-                />
+                <input type="number" value={weightInput} onChange={e => setWeightInput(e.target.value)} placeholder="Weight" step="0.1" onKeyDown={e => { if (e.key === 'Enter') addWeightEntry() }} />
                 <span className={styles.weightUnit}>lbs</span>
               </div>
               <button className={styles.addBtn} onClick={addWeightEntry}>Log</button>
             </div>
           </div>
 
-          {/* Stats cards */}
-          <div className={styles.weightStatsRow}>
-            {(['his', 'her'] as const).map(who => {
-              const stats = getWeightStats(who)
-              const profile = who === 'his' ? HIM : HER
-              return (
-                <div key={who} className={styles.weightStatCard}>
-                  <h3>{profile.label}</h3>
-                  {!stats ? (
-                    <p className={styles.weightNoData}>No entries yet</p>
-                  ) : (
-                    <div className={styles.weightStatGrid}>
-                      <div>
-                        <div className={styles.weightStatLabel}>Current</div>
-                        <div className={styles.weightStatValue}>{stats.latest} lbs</div>
-                      </div>
-                      <div>
-                        <div className={styles.weightStatLabel}>7-day avg</div>
-                        <div className={styles.weightStatValue}>{stats.avg7} lbs</div>
-                      </div>
-                      <div>
-                        <div className={styles.weightStatLabel}>30-day avg</div>
-                        <div className={styles.weightStatValue}>{stats.avg30} lbs</div>
-                      </div>
-                      <div>
-                        <div className={styles.weightStatLabel}>Total change</div>
-                        <div className={`${styles.weightStatValue} ${stats.totalChange <= 0 ? styles.weightDown : styles.weightUp}`}>
-                          {stats.totalChange > 0 ? '+' : ''}{Math.round(stats.totalChange * 10) / 10} lbs
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Weight chart (simple bar/visual) */}
-          {weightEntries.length > 0 && (
-            <div className={styles.weightChartSection}>
-              {(['his', 'her'] as const).map(who => {
-                const entries = weightEntries.filter(e => e.person === who).sort((a, b) => a.date.localeCompare(b.date))
-                if (!entries.length) return null
-                const minW = Math.min(...entries.map(e => e.weight)) - 2
-                const maxW = Math.max(...entries.map(e => e.weight)) + 2
-                const range = maxW - minW || 1
-                const profile = who === 'his' ? HIM : HER
-
-                return (
-                  <div key={who} className={styles.weightChartBlock}>
-                    <h4>{profile.label}'s Progress</h4>
-                    <div className={styles.weightChart}>
-                      {entries.slice(-30).map((e, i) => {
-                        const pct = ((e.weight - minW) / range) * 100
-                        const prevWeight = i > 0 ? entries[Math.max(0, entries.indexOf(e) - 1)].weight : e.weight
-                        const isDown = e.weight <= prevWeight
-                        return (
-                          <div key={e.id} className={styles.weightBar} title={`${e.date}: ${e.weight} lbs`}>
-                            <div className={`${styles.weightBarFill} ${isDown ? styles.weightBarDown : styles.weightBarUp}`} style={{ height: `${pct}%` }} />
-                            <div className={styles.weightBarLabel}>{e.weight}</div>
-                            <div className={styles.weightBarDate}>{new Date(e.date + 'T12:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}</div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Entry log */}
-          {weightEntries.length > 0 && (
-            <div className={styles.weightLog}>
-              <h4>All Entries</h4>
-              <div className={styles.weightLogEntries}>
-                {[...weightEntries].reverse().map(e => (
-                  <div key={e.id} className={styles.weightLogEntry}>
-                    <span className={styles.weightLogPerson}>{e.person === 'his' ? 'Him' : 'Her'}</span>
-                    <span className={styles.weightLogDate}>{new Date(e.date + 'T12:00:00').toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                    <span className={styles.weightLogValue}>{e.weight} lbs</span>
-                    <button className={styles.weightLogDelete} onClick={() => deleteWeightEntry(e.id)}>×</button>
-                  </div>
-                ))}
+          {wStats && (
+            <div className={styles.weightStatCard}>
+              <div className={styles.weightStatGrid}>
+                <div><div className={styles.weightStatLabel}>Current</div><div className={styles.weightStatValue}>{wStats.latest} lbs</div></div>
+                <div><div className={styles.weightStatLabel}>7-day avg</div><div className={styles.weightStatValue}>{wStats.avg7} lbs</div></div>
+                <div><div className={styles.weightStatLabel}>30-day avg</div><div className={styles.weightStatValue}>{wStats.avg30} lbs</div></div>
+                <div><div className={styles.weightStatLabel}>Total change</div><div className={`${styles.weightStatValue} ${wStats.totalChange <= 0 ? styles.weightDown : styles.weightUp}`}>{wStats.totalChange > 0 ? '+' : ''}{Math.round(wStats.totalChange * 10) / 10} lbs</div></div>
               </div>
             </div>
           )}
+
+          {(() => {
+            const entries = weightEntries.filter(e => e.person === personKey).sort((a, b) => a.date.localeCompare(b.date))
+            if (!entries.length) return null
+            const minW = Math.min(...entries.map(e => e.weight)) - 2, maxW = Math.max(...entries.map(e => e.weight)) + 2, range = maxW - minW || 1
+            return (
+              <div className={styles.weightChartBlock}>
+                <h4>Progress</h4>
+                <div className={styles.weightChart}>
+                  {entries.slice(-30).map((e, i) => {
+                    const pct = ((e.weight - minW) / range) * 100
+                    const prev = i > 0 ? entries[Math.max(0, entries.indexOf(e) - 1)].weight : e.weight
+                    return (<div key={e.id} className={styles.weightBar} title={`${e.date}: ${e.weight}`}><div className={`${styles.weightBarFill} ${e.weight <= prev ? styles.weightBarDown : styles.weightBarUp}`} style={{ height: `${pct}%` }} /><div className={styles.weightBarLabel}>{e.weight}</div><div className={styles.weightBarDate}>{new Date(e.date + 'T12:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}</div></div>)
+                  })}
+                </div>
+              </div>
+            )
+          })()}
+
+          {weightEntries.filter(e => e.person === personKey).length > 0 && (
+            <div className={styles.weightLog}><h4>All Entries</h4><div className={styles.weightLogEntries}>
+              {[...weightEntries].filter(e => e.person === personKey).reverse().map(e => (
+                <div key={e.id} className={styles.weightLogEntry}>
+                  <span className={styles.weightLogDate}>{new Date(e.date + 'T12:00:00').toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                  <span className={styles.weightLogValue}>{e.weight} lbs</span>
+                  <button className={styles.weightLogDelete} onClick={() => deleteWeightEntry(e.id)}>×</button>
+                </div>
+              ))}
+            </div></div>
+          )}
         </div>
       )}
 
-      {/* ═══════════ MEAL DIALOG (B+L planner) ═══════════ */}
-      {mealDialog && (
-        <div className={styles.dialogOverlay} onClick={() => setMealDialog(null)}>
-          <div className={styles.dialog} onClick={e => e.stopPropagation()}>
-            <div className={styles.dialogHeader}>
-              <h3>Plan Breakfast &amp; Lunch</h3>
-              <button className={styles.dialogClose} onClick={() => setMealDialog(null)}>×</button>
-            </div>
-            <div className={styles.dialogBody}>
-              {(() => {
-                const profile = mealDialog.who === 'his' ? HIM : HER
-                const day = plan.days[mealDialog.di]
-                const dinnerCal = day.dinner.meal?.cal || 0
-                const remaining = profile.calTarget - dinnerCal
-                return (
-                  <>
-                    <div className={styles.dialogBudget}>
-                      <span>{profile.label} · {day.day}</span>
-                      <span>Dinner: {dinnerCal} cal</span>
-                      <span className={styles.dialogBudgetRemaining}><strong>{remaining} cal</strong> left for B+L</span>
-                    </div>
-                    <div className={styles.dialogFields}>
-                      <div>
-                        <label>🌅 Breakfast — what do you want?</label>
-                        <input type="text" placeholder="e.g. scrambled eggs with turkey sausage"
-                          value={mealDialog.breakfastInput}
-                          onChange={e => setMealDialog(prev => prev ? { ...prev, breakfastInput: e.target.value } : null)}
-                        />
-                      </div>
-                      <div>
-                        <label>☀️ Lunch — what do you want?</label>
-                        <input type="text" placeholder="e.g. chicken caesar salad"
-                          value={mealDialog.lunchInput}
-                          onChange={e => setMealDialog(prev => prev ? { ...prev, lunchInput: e.target.value } : null)}
-                        />
-                      </div>
-                    </div>
-                    <p className={styles.dialogHint}>Claude will calculate exact portions for both meals to fit within your {remaining} cal budget.</p>
-                    <button className={styles.generateIdeasBtn}
-                      disabled={calculating !== null}
-                      onClick={() => calculateBothMeals(mealDialog.di, mealDialog.who, mealDialog.breakfastInput, mealDialog.lunchInput)}
-                    >
-                      {calculating ? <><span className={styles.btnSpinner} /> Calculating...</> : 'Calculate both meals'}
-                    </button>
-                  </>
-                )
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════ PRESET PICKER DIALOG ═══════════ */}
-      {presetPicker && (
-        <div className={styles.dialogOverlay} onClick={() => setPresetPicker(null)}>
-          <div className={styles.dialog} onClick={e => e.stopPropagation()}>
-            <div className={styles.dialogHeader}>
-              <h3>Choose a Preset</h3>
-              <button className={styles.dialogClose} onClick={() => setPresetPicker(null)}>×</button>
-            </div>
-            <div className={styles.dialogBody}>
-              {(() => {
-                const relevant = presets.filter(p =>
-                  p.mealType === presetPicker.mealType &&
-                  (presetPicker.who === 'shared' ? p.who === 'shared' : (p.who === presetPicker.who || p.who === 'shared'))
-                )
-                if (!relevant.length) return <p className={styles.noDislikes}>No presets saved for this meal type yet.</p>
-                return (
-                  <div className={styles.presetPickerList}>
-                    {relevant.map(p => (
-                      <button key={p.id} className={styles.presetPickerItem}
-                        onClick={() => applyPreset(p, presetPicker.di, presetPicker.who, presetPicker.mealType)}
-                      >
-                        <div className={styles.presetPickerName}>{p.name}</div>
-                        <div className={styles.presetPickerMacros}>
-                          <span>{p.cal} cal</span>
-                          <span className={styles.proteinVal}>P {p.protein}g</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════ COPY MEAL DIALOG ═══════════ */}
+      {/* ═══ DIALOGS ═══ */}
       {copyTarget && (
         <div className={styles.dialogOverlay} onClick={() => setCopyTarget(null)}>
           <div className={styles.dialog} onClick={e => e.stopPropagation()}>
-            <div className={styles.dialogHeader}>
-              <h3>Copy to which day?</h3>
-              <button className={styles.dialogClose} onClick={() => setCopyTarget(null)}>×</button>
-            </div>
+            <div className={styles.dialogHeader}><h3>Copy to which day?</h3><button className={styles.dialogClose} onClick={() => setCopyTarget(null)}>×</button></div>
             <div className={styles.dialogBody}>
-              <div className={styles.copyMealInfo}>
-                <span className={styles.copyMealName}>{copyTarget.meal.meal?.name}</span>
-                <span className={styles.copyMealMacros}>{copyTarget.meal.meal?.cal} cal · {copyTarget.meal.meal?.protein}g P</span>
-              </div>
-              <div className={styles.copyDayList}>
-                {DAYS_META.map((meta, di) => (
-                  <button key={di} className={styles.copyDayBtn} onClick={() => copyMealToDay(di)}>
-                    <span>{meta.name}</span>
-                    <span className={styles.copyDayTheme}>{meta.theme}</span>
-                  </button>
-                ))}
-              </div>
+              <div className={styles.copyMealInfo}><span className={styles.copyMealName}>{copyTarget.meal.meal?.name}</span><span className={styles.copyMealMacros}>{copyTarget.meal.meal?.cal} cal · {copyTarget.meal.meal?.protein}g P</span></div>
+              <div className={styles.copyDayList}>{DAYS_META.map((m, di) => (<button key={di} className={styles.copyDayBtn} onClick={() => copyMealToDay(di)}><span>{m.name}</span><span className={styles.copyDayTheme}>{m.theme}</span></button>))}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {presetPicker && (
+        <div className={styles.dialogOverlay} onClick={() => setPresetPicker(null)}>
+          <div className={styles.dialog} onClick={e => e.stopPropagation()}>
+            <div className={styles.dialogHeader}><h3>Choose a Preset</h3><button className={styles.dialogClose} onClick={() => setPresetPicker(null)}>×</button></div>
+            <div className={styles.dialogBody}>
+              {(() => {
+                const who = presetPicker.mealType === 'dinner' ? 'shared' : personKey
+                const relevant = presets.filter(p => p.mealType === presetPicker.mealType && (p.who === who || p.who === 'shared'))
+                if (!relevant.length) return <p className={styles.noDislikes}>No presets for this meal type.</p>
+                return (<div className={styles.presetPickerList}>{relevant.map(p => (<button key={p.id} className={styles.presetPickerItem} onClick={() => applyPreset(p, presetPicker.di, presetPicker.mealType)}><div className={styles.presetPickerName}>{p.name}</div><div className={styles.presetPickerMacros}><span>{p.cal} cal</span><span className={styles.proteinVal}>P {p.protein}g</span></div></button>))}</div>)
+              })()}
             </div>
           </div>
         </div>
@@ -1160,79 +739,42 @@ export default function Home() {
   )
 }
 
-// ═══════════ MealInput Component ═══════════
+// ═══════════ MealInput ═══════════
 function MealInput({ placeholder, value, meal, calcKey, calculating, onSubmit, onChange, editable, locked, onToggleLock, onRecalculate, onDeleteIngredient, onSavePreset, onCopy }: {
   placeholder: string; value: string; meal: MacroMeal | null; calcKey: string; calculating: string | null
-  onSubmit: (input: string) => void; onChange: (v: string) => void
-  editable?: boolean
-  locked?: boolean
-  onToggleLock?: () => void
-  onRecalculate?: (portionIndex: number, newAmount: string) => void
-  onDeleteIngredient?: (portionIndex: number) => void
-  onSavePreset?: () => void
-  onCopy?: () => void
+  onSubmit: (v: string) => void; onChange: (v: string) => void
+  editable?: boolean; locked?: boolean; onToggleLock?: () => void
+  onRecalculate?: (pi: number, amt: string) => void; onDeleteIngredient?: (pi: number) => void
+  onSavePreset?: () => void; onCopy?: () => void
 }) {
   const isCalc = calculating === calcKey
-  const [editingIdx, setEditingIdx] = useState<number | null>(null)
-  const [editValue, setEditValue] = useState('')
+  const [editIdx, setEditIdx] = useState<number | null>(null)
+  const [editVal, setEditVal] = useState('')
   const [recalcing, setRecalcing] = useState(false)
 
-  const startEdit = (idx: number, currentAmount: string) => { setEditingIdx(idx); setEditValue(currentAmount) }
-
-  const commitEdit = async (idx: number) => {
-    if (editValue.trim() && onRecalculate) {
-      setRecalcing(true)
-      await onRecalculate(idx, editValue.trim())
-      setRecalcing(false)
-    }
-    setEditingIdx(null)
+  const commitEdit = async (i: number) => {
+    if (editVal.trim() && onRecalculate) { setRecalcing(true); await onRecalculate(i, editVal.trim()); setRecalcing(false) }
+    setEditIdx(null)
   }
 
   return (
     <div className={`${styles.mealInput} ${locked ? styles.mealInputLocked : ''}`}>
       <div className={styles.mealInputRow}>
-        <input type="text" placeholder={placeholder} value={value}
-          onChange={e => onChange(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && value.trim() && !locked) onSubmit(value) }}
-          disabled={isCalc || locked}
-        />
-        {!locked ? (
-          <button className={styles.calcBtn} onClick={() => value.trim() && onSubmit(value)}
-            disabled={isCalc || !value.trim()} title={meal ? 'Recalculate' : 'Calculate macros'}>
-            {isCalc ? '...' : meal ? '↺' : '→'}
-          </button>
-        ) : (
-          <div className={styles.lockedBadgeInline}>🔒</div>
-        )}
+        <input type="text" placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && value.trim() && !locked) onSubmit(value) }} disabled={isCalc || locked} />
+        {!locked ? <button className={styles.calcBtn} onClick={() => value.trim() && onSubmit(value)} disabled={isCalc || !value.trim()}>{isCalc ? '...' : meal ? '↺' : '→'}</button> : <div className={styles.lockedBadgeInline}>🔒</div>}
       </div>
-
-      {isCalc && <div className={styles.calcLoading}><span className={styles.btnSpinner} /> Calculating macros...</div>}
-
+      {isCalc && <div className={styles.calcLoading}><span className={styles.btnSpinner} /> Calculating...</div>}
       {!isCalc && meal && (
         <div className={`${styles.mealResult} ${locked ? styles.mealResultLocked : ''}`}>
           <div className={styles.mealResultHeader}>
-            <div>
-              <div className={styles.mealResultName}>
-                {locked && <span className={styles.lockIcon}>🔒 </span>}
-                {meal.name}
-              </div>
-              {meal.description && <div className={styles.mealResultDesc}>{meal.description}</div>}
-            </div>
+            <div className={styles.mealResultName}>{locked && '🔒 '}{meal.name}</div>
             <div className={styles.mealResultActions}>
-              {onCopy && (
-                <button className={styles.copyMealBtn} onClick={onCopy} title="Copy to another day">📋 Copy</button>
-              )}
-              {onToggleLock && (
-                <button className={`${styles.lockBtn} ${locked ? styles.lockBtnActive : ''}`}
-                  onClick={onToggleLock} title={locked ? 'Unlock meal' : 'Lock meal'}>
-                  {locked ? '🔓 Unlock' : '🔒 Lock'}
-                </button>
-              )}
-              {onSavePreset && !locked && (
-                <button className={styles.savePresetBtn} onClick={onSavePreset} title="Save as preset">⭐ Save</button>
-              )}
+              {onCopy && <button className={styles.actionBtn} onClick={onCopy} title="Copy">📋</button>}
+              {onToggleLock && <button className={`${styles.actionBtn} ${locked ? styles.actionBtnActive : ''}`} onClick={onToggleLock} title={locked ? 'Unlock' : 'Lock'}>{locked ? '🔓' : '🔒'}</button>}
+              {onSavePreset && !locked && <button className={styles.actionBtn} onClick={onSavePreset} title="Save preset">⭐</button>}
             </div>
           </div>
+          {meal.description && <div className={styles.mealResultDesc}>{meal.description}</div>}
           <div className={styles.mealResultMacros}>
             <span><strong>{meal.cal}</strong> cal</span>
             <span>P <strong className={styles.proteinVal}>{meal.protein}g</strong></span>
@@ -1241,26 +783,20 @@ function MealInput({ placeholder, value, meal, calcKey, calculating, onSubmit, o
           </div>
           {meal.portions && meal.portions.length > 0 && (
             <div className={styles.portionList}>
-              {editable && !locked && <div className={styles.portionEditHint}>Click amount to edit (recalculates macros) · × to remove</div>}
-              {locked && <div className={styles.portionEditHint}>🔒 Locked — other meals will fill your remaining budget</div>}
-              {recalcing && <div className={styles.calcLoading}><span className={styles.btnSpinner} /> Updating macros...</div>}
+              {editable && !locked && <div className={styles.portionEditHint}>Tap amount to edit · × to remove</div>}
+              {locked && <div className={styles.portionEditHint}>🔒 Locked — other meals fill remaining budget</div>}
+              {recalcing && <div className={styles.calcLoading}><span className={styles.btnSpinner} /> Updating...</div>}
               {meal.portions.map((p, i) => (
                 <div key={i} className={`${styles.portionItem} ${editable && !locked ? styles.portionItemEditable : ''}`}>
                   <span className={styles.portionIngredient}>{p.ingredient}</span>
-                  {editable && !locked && editingIdx === i ? (
-                    <input className={styles.portionAmountInput} value={editValue}
-                      onChange={e => setEditValue(e.target.value)}
-                      onBlur={() => commitEdit(i)}
-                      onKeyDown={e => { if (e.key === 'Enter') commitEdit(i); if (e.key === 'Escape') setEditingIdx(null) }}
-                      autoFocus
-                    />
+                  {editable && !locked && editIdx === i ? (
+                    <input className={styles.portionAmountInput} value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={() => commitEdit(i)} onKeyDown={e => { if (e.key === 'Enter') commitEdit(i); if (e.key === 'Escape') setEditIdx(null) }} autoFocus />
                   ) : (
-                    <span className={`${styles.portionAmount} ${editable && !locked ? styles.portionAmountClickable : ''}`}
-                      onClick={() => editable && !locked && startEdit(i, p.amount)}>{p.amount}</span>
+                    <span className={`${styles.portionAmount} ${editable && !locked ? styles.portionAmountClickable : ''}`} onClick={() => editable && !locked && (setEditIdx(i), setEditVal(p.amount))}>{p.amount}</span>
                   )}
                   <span className={styles.portionCal}>{p.cal} cal</span>
                   <span className={styles.portionProtein}>{p.protein}g P</span>
-                  {editable && !locked && <button className={styles.portionDeleteBtn} onClick={() => onDeleteIngredient?.(i)} title="Remove">×</button>}
+                  {editable && !locked && <button className={styles.portionDeleteBtn} onClick={() => onDeleteIngredient?.(i)}>×</button>}
                 </div>
               ))}
             </div>
