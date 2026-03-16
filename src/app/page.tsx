@@ -77,6 +77,61 @@ export default function Home() {
     mealType: 'breakfast' | 'lunch' | 'dinner'
   } | null>(null)
 
+  // Locked meals — key format: "di-who-mealType" e.g. "0-his-breakfast"
+  const [lockedMeals, setLockedMeals] = useState<Set<string>>(new Set())
+
+  const toggleLock = (di: number, who: 'his' | 'her' | 'shared', mealType: 'breakfast' | 'lunch' | 'dinner') => {
+    const key = `${di}-${who}-${mealType}`
+    setLockedMeals(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+
+  const isLocked = (di: number, who: 'his' | 'her' | 'shared', mealType: 'breakfast' | 'lunch' | 'dinner') => {
+    return lockedMeals.has(`${di}-${who}-${mealType}`)
+  }
+
+  // Get locked calories for a person on a given day (breakfast + lunch only)
+  const getLockedCals = (di: number, who: 'his' | 'her') => {
+    const day = plan.days[di]
+    let lockedCal = 0
+    if (isLocked(di, who, 'breakfast') && day[who].breakfast.meal) lockedCal += day[who].breakfast.meal!.cal
+    if (isLocked(di, who, 'lunch') && day[who].lunch.meal) lockedCal += day[who].lunch.meal!.cal
+    return lockedCal
+  }
+
+  // Get all dislikes for a person (for shared dinner, combine both)
+  const getDislikesFor = (who: 'his' | 'her' | 'shared') => {
+    if (who === 'shared') return [...dislikes.his, ...dislikes.her]
+    return dislikes[who]
+  }
+
+  // Copy meal between days
+  const [copiedMeal, setCopiedMeal] = useState<{
+    meal: PersonMeal
+    who: 'his' | 'her' | 'shared'
+    mealType: 'breakfast' | 'lunch' | 'dinner'
+  } | null>(null)
+
+  const [copyTarget, setCopyTarget] = useState<{
+    open: boolean
+    meal: PersonMeal
+    who: 'his' | 'her' | 'shared'
+    mealType: 'breakfast' | 'lunch' | 'dinner'
+  } | null>(null)
+
+  const copyMealToDay = (targetDi: number) => {
+    if (!copyTarget) return
+    const { meal: pm, who, mealType } = copyTarget
+    updateDay(targetDi, (d) => {
+      if (mealType === 'dinner') return { ...d, dinner: { ...pm } }
+      return { ...d, [who]: { ...(d as any)[who], [mealType]: { ...pm } } }
+    })
+    setCopyTarget(null)
+  }
+
   const sanitizePlan = (raw: any): MealPlan => {
     const safeMeal = (m: any): PersonMeal => ({
       input: typeof m?.input === 'string' ? m.input : '',
@@ -151,6 +206,7 @@ export default function Home() {
   ) => {
     if (!input.trim()) return
     const key = `${di}-${who}-${mealType}`
+    if (isLocked(di, who, mealType)) return // don't recalculate locked meals
     setCalculating(key)
 
     const day = plan.days[di]
@@ -158,6 +214,16 @@ export default function Home() {
     const profile = who === 'his' ? HIM : HER
     const dinnerCal = dinnerMacros?.cal || 0
     const remainingCals = profile.calTarget - dinnerCal
+    const personDislikes = getDislikesFor(who)
+
+    // Check if the sibling meal (breakfast or lunch) is locked
+    let lockedSiblingCals = 0
+    if (who !== 'shared' && mealType !== 'dinner') {
+      const sibling = mealType === 'breakfast' ? 'lunch' : 'breakfast'
+      if (isLocked(di, who, sibling) && day[who][sibling].meal) {
+        lockedSiblingCals = day[who][sibling].meal!.cal
+      }
+    }
 
     try {
       const res = await fetch('/api/calculate-meal', {
@@ -165,7 +231,9 @@ export default function Home() {
         body: JSON.stringify({
           mealInput: input, mealType,
           person: who === 'shared' ? 'shared' : who,
-          remainingCals, targetProtein: profile.proteinTarget, dinnerMacros
+          remainingCals, targetProtein: profile.proteinTarget, dinnerMacros,
+          dislikes: personDislikes,
+          lockedMealsCals: lockedSiblingCals,
         }),
       })
       const { meal } = await res.json()
@@ -197,12 +265,14 @@ export default function Home() {
 
     // Calculate breakfast first (42% of remaining)
     try {
+      const personDislikes = getDislikesFor(who)
       const bRes = await fetch('/api/calculate-meal', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mealInput: breakfastInput, mealType: 'breakfast',
           person: who, remainingCals, targetProtein: profile.proteinTarget,
-          dinnerMacros: day.dinner.meal
+          dinnerMacros: day.dinner.meal,
+          dislikes: personDislikes,
         }),
       })
       const { meal: breakfastMeal } = await bRes.json()
@@ -217,10 +287,11 @@ export default function Home() {
         body: JSON.stringify({
           mealInput: lunchInput, mealType: 'lunch',
           person: who,
-          remainingCals: lunchBudget + (breakfastMeal?.cal || 0), // send total remaining so API splits correctly
+          remainingCals: lunchBudget + (breakfastMeal?.cal || 0),
           targetProtein: profile.proteinTarget,
           dinnerMacros: day.dinner.meal,
-          exactLunchBudget: lunchBudget, // extra hint
+          exactLunchBudget: lunchBudget,
+          dislikes: personDislikes,
         }),
       })
       const { meal: lunchMeal } = await lRes.json()
@@ -542,10 +613,13 @@ export default function Home() {
                             calculating={calculating}
                             onSubmit={(input) => calculateMeal(di, 'shared', 'dinner', input)}
                             onChange={(v) => updateDay(di, d => ({ ...d, dinner: { ...d.dinner, input: v } }))}
-                            editable
+                            editable={!isLocked(di, 'shared', 'dinner')}
+                            locked={isLocked(di, 'shared', 'dinner')}
+                            onToggleLock={day.dinner.meal ? () => toggleLock(di, 'shared', 'dinner') : undefined}
                             onRecalculate={(pi, amt) => recalculatePortions(di, 'shared', 'dinner', pi, amt)}
                             onDeleteIngredient={(pi) => deleteIngredient(di, 'shared', 'dinner', pi)}
                             onSavePreset={day.dinner.meal ? () => saveAsPreset(day.dinner.meal!, 'dinner', 'shared') : undefined}
+                            onCopy={day.dinner.meal ? () => setCopyTarget({ open: true, meal: day.dinner, who: 'shared', mealType: 'dinner' }) : undefined}
                           />
                           <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ open: true, di, who: 'shared', mealType: 'dinner' })} title="Use a preset">⭐</button>
                         </div>
@@ -602,10 +676,13 @@ export default function Home() {
                                       onChange={(v) => updateDay(di, d => ({
                                         ...d, [who]: { ...d[who], [mt]: { ...d[who][mt], input: v } }
                                       }))}
-                                      editable
+                                      editable={!isLocked(di, who, mt)}
+                                      locked={isLocked(di, who, mt)}
+                                      onToggleLock={day[who][mt].meal ? () => toggleLock(di, who, mt) : undefined}
                                       onRecalculate={(pi, amt) => recalculatePortions(di, who, mt, pi, amt)}
                                       onDeleteIngredient={(pi) => deleteIngredient(di, who, mt, pi)}
                                       onSavePreset={day[who][mt].meal ? () => saveAsPreset(day[who][mt].meal!, mt, who) : undefined}
+                                      onCopy={day[who][mt].meal ? () => setCopyTarget({ open: true, meal: day[who][mt], who, mealType: mt }) : undefined}
                                     />
                                     <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ open: true, di, who, mealType: mt })} title="Use a preset">⭐</button>
                                   </div>
@@ -1053,18 +1130,47 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* ═══════════ COPY MEAL DIALOG ═══════════ */}
+      {copyTarget && (
+        <div className={styles.dialogOverlay} onClick={() => setCopyTarget(null)}>
+          <div className={styles.dialog} onClick={e => e.stopPropagation()}>
+            <div className={styles.dialogHeader}>
+              <h3>Copy to which day?</h3>
+              <button className={styles.dialogClose} onClick={() => setCopyTarget(null)}>×</button>
+            </div>
+            <div className={styles.dialogBody}>
+              <div className={styles.copyMealInfo}>
+                <span className={styles.copyMealName}>{copyTarget.meal.meal?.name}</span>
+                <span className={styles.copyMealMacros}>{copyTarget.meal.meal?.cal} cal · {copyTarget.meal.meal?.protein}g P</span>
+              </div>
+              <div className={styles.copyDayList}>
+                {DAYS_META.map((meta, di) => (
+                  <button key={di} className={styles.copyDayBtn} onClick={() => copyMealToDay(di)}>
+                    <span>{meta.name}</span>
+                    <span className={styles.copyDayTheme}>{meta.theme}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ═══════════ MealInput Component ═══════════
-function MealInput({ placeholder, value, meal, calcKey, calculating, onSubmit, onChange, editable, onRecalculate, onDeleteIngredient, onSavePreset }: {
+function MealInput({ placeholder, value, meal, calcKey, calculating, onSubmit, onChange, editable, locked, onToggleLock, onRecalculate, onDeleteIngredient, onSavePreset, onCopy }: {
   placeholder: string; value: string; meal: MacroMeal | null; calcKey: string; calculating: string | null
   onSubmit: (input: string) => void; onChange: (v: string) => void
   editable?: boolean
+  locked?: boolean
+  onToggleLock?: () => void
   onRecalculate?: (portionIndex: number, newAmount: string) => void
   onDeleteIngredient?: (portionIndex: number) => void
   onSavePreset?: () => void
+  onCopy?: () => void
 }) {
   const isCalc = calculating === calcKey
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
@@ -1083,31 +1189,49 @@ function MealInput({ placeholder, value, meal, calcKey, calculating, onSubmit, o
   }
 
   return (
-    <div className={styles.mealInput}>
+    <div className={`${styles.mealInput} ${locked ? styles.mealInputLocked : ''}`}>
       <div className={styles.mealInputRow}>
         <input type="text" placeholder={placeholder} value={value}
           onChange={e => onChange(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && value.trim()) onSubmit(value) }}
-          disabled={isCalc}
+          onKeyDown={e => { if (e.key === 'Enter' && value.trim() && !locked) onSubmit(value) }}
+          disabled={isCalc || locked}
         />
-        <button className={styles.calcBtn} onClick={() => value.trim() && onSubmit(value)}
-          disabled={isCalc || !value.trim()} title={meal ? 'Recalculate' : 'Calculate macros'}>
-          {isCalc ? '...' : meal ? '↺' : '→'}
-        </button>
+        {!locked ? (
+          <button className={styles.calcBtn} onClick={() => value.trim() && onSubmit(value)}
+            disabled={isCalc || !value.trim()} title={meal ? 'Recalculate' : 'Calculate macros'}>
+            {isCalc ? '...' : meal ? '↺' : '→'}
+          </button>
+        ) : (
+          <div className={styles.lockedBadgeInline}>🔒</div>
+        )}
       </div>
 
       {isCalc && <div className={styles.calcLoading}><span className={styles.btnSpinner} /> Calculating macros...</div>}
 
       {!isCalc && meal && (
-        <div className={styles.mealResult}>
+        <div className={`${styles.mealResult} ${locked ? styles.mealResultLocked : ''}`}>
           <div className={styles.mealResultHeader}>
             <div>
-              <div className={styles.mealResultName}>{meal.name}</div>
+              <div className={styles.mealResultName}>
+                {locked && <span className={styles.lockIcon}>🔒 </span>}
+                {meal.name}
+              </div>
               {meal.description && <div className={styles.mealResultDesc}>{meal.description}</div>}
             </div>
-            {onSavePreset && (
-              <button className={styles.savePresetBtn} onClick={onSavePreset} title="Save as preset">⭐ Save</button>
-            )}
+            <div className={styles.mealResultActions}>
+              {onCopy && (
+                <button className={styles.copyMealBtn} onClick={onCopy} title="Copy to another day">📋 Copy</button>
+              )}
+              {onToggleLock && (
+                <button className={`${styles.lockBtn} ${locked ? styles.lockBtnActive : ''}`}
+                  onClick={onToggleLock} title={locked ? 'Unlock meal' : 'Lock meal'}>
+                  {locked ? '🔓 Unlock' : '🔒 Lock'}
+                </button>
+              )}
+              {onSavePreset && !locked && (
+                <button className={styles.savePresetBtn} onClick={onSavePreset} title="Save as preset">⭐ Save</button>
+              )}
+            </div>
           </div>
           <div className={styles.mealResultMacros}>
             <span><strong>{meal.cal}</strong> cal</span>
@@ -1117,12 +1241,13 @@ function MealInput({ placeholder, value, meal, calcKey, calculating, onSubmit, o
           </div>
           {meal.portions && meal.portions.length > 0 && (
             <div className={styles.portionList}>
-              {editable && <div className={styles.portionEditHint}>Click amount to edit (recalculates macros) · × to remove</div>}
+              {editable && !locked && <div className={styles.portionEditHint}>Click amount to edit (recalculates macros) · × to remove</div>}
+              {locked && <div className={styles.portionEditHint}>🔒 Locked — other meals will fill your remaining budget</div>}
               {recalcing && <div className={styles.calcLoading}><span className={styles.btnSpinner} /> Updating macros...</div>}
               {meal.portions.map((p, i) => (
-                <div key={i} className={`${styles.portionItem} ${editable ? styles.portionItemEditable : ''}`}>
+                <div key={i} className={`${styles.portionItem} ${editable && !locked ? styles.portionItemEditable : ''}`}>
                   <span className={styles.portionIngredient}>{p.ingredient}</span>
-                  {editable && editingIdx === i ? (
+                  {editable && !locked && editingIdx === i ? (
                     <input className={styles.portionAmountInput} value={editValue}
                       onChange={e => setEditValue(e.target.value)}
                       onBlur={() => commitEdit(i)}
@@ -1130,12 +1255,12 @@ function MealInput({ placeholder, value, meal, calcKey, calculating, onSubmit, o
                       autoFocus
                     />
                   ) : (
-                    <span className={`${styles.portionAmount} ${editable ? styles.portionAmountClickable : ''}`}
-                      onClick={() => editable && startEdit(i, p.amount)}>{p.amount}</span>
+                    <span className={`${styles.portionAmount} ${editable && !locked ? styles.portionAmountClickable : ''}`}
+                      onClick={() => editable && !locked && startEdit(i, p.amount)}>{p.amount}</span>
                   )}
                   <span className={styles.portionCal}>{p.cal} cal</span>
                   <span className={styles.portionProtein}>{p.protein}g P</span>
-                  {editable && <button className={styles.portionDeleteBtn} onClick={() => onDeleteIngredient?.(i)} title="Remove">×</button>}
+                  {editable && !locked && <button className={styles.portionDeleteBtn} onClick={() => onDeleteIngredient?.(i)} title="Remove">×</button>}
                 </div>
               ))}
             </div>

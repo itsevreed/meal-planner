@@ -305,6 +305,22 @@
 .portionDeleteBtn:hover { background: #fee; color: #d33; }
 @media (prefers-color-scheme: dark) { .portionDeleteBtn:hover { background: #3a1818; color: #f88; } }
 
+/* ─── Lock styles ─── */
+.mealInputLocked .mealInputRow input { opacity: 0.6; background: var(--bg2); }
+.lockedBadgeInline { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; font-size: 18px; }
+.mealResultLocked { border-color: var(--green); border-width: 1.5px; background: var(--green-bg); }
+.lockIcon { font-size: 12px; }
+.mealResultActions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.lockBtn {
+  font-size: 11px; font-weight: 500; padding: 5px 10px;
+  border: 0.5px solid var(--border2); border-radius: 99px;
+  background: none; color: var(--text2); cursor: pointer;
+  transition: all .15s; white-space: nowrap; min-height: 28px;
+}
+.lockBtn:hover { background: var(--bg3); }
+.lockBtnActive { border-color: var(--green); color: var(--green); background: var(--green-bg); }
+.lockBtnActive:hover { background: var(--bg); }
+
 /* ─── Person totals ─── */
 .personTotals { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--text2); border-top: 0.5px solid var(--border); padding-top: 8px; }
 @media (min-width: 640px) { .personTotals { gap: 10px; font-size: 12px; padding-top: 10px; } }
@@ -675,3 +691,32 @@
 .presetPickerItem:hover { background: var(--green-bg); border-color: var(--green); }
 .presetPickerName { font-size: 14px; font-weight: 500; }
 .presetPickerMacros { display: flex; gap: 8px; font-size: 12px; color: var(--text2); }
+
+/* ─── Copy meal ─── */
+.copyMealBtn {
+  font-size: 11px; font-weight: 500; padding: 5px 10px;
+  border: 0.5px solid var(--border2); border-radius: 99px;
+  background: none; color: var(--text2); cursor: pointer;
+  transition: all .15s; white-space: nowrap; min-height: 28px;
+}
+.copyMealBtn:hover { background: var(--bg2); border-color: var(--text3); }
+
+.copyMealInfo {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 10px 14px; background: var(--bg2);
+  border-radius: var(--radius); flex-wrap: wrap;
+}
+.copyMealName { font-size: 14px; font-weight: 500; }
+.copyMealMacros { font-size: 12px; color: var(--text2); }
+
+.copyDayList { display: flex; flex-direction: column; gap: 4px; }
+.copyDayBtn {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 12px 16px;
+  border: 0.5px solid var(--border); border-radius: var(--radius);
+  background: none; cursor: pointer; text-align: left;
+  transition: all .15s; min-height: 48px; font-size: 14px;
+  font-weight: 500; color: var(--text);
+}
+.copyDayBtn:hover { background: var(--green-bg); border-color: var(--green); }
+.copyDayTheme { font-size: 11px; color: var(--text3); font-weight: 400; }
