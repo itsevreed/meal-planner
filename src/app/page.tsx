@@ -26,7 +26,7 @@ function weekIdFor(off = 0) {
   return `${y}-W${String(w).padStart(2, '0')}`
 }
 
-type Tab = 'plan' | 'summary' | 'ideas' | 'presets' | 'scanned' | 'dislikes' | 'grocery' | 'weight' | 'water' | 'coach'
+type Tab = 'plan' | 'track' | 'ideas' | 'foods' | 'grocery' | 'coach'
 
 // ═══════════ ROOT ═══════════
 export default function Home() {
@@ -60,6 +60,8 @@ export default function Home() {
 function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => void; theme: string; onToggle: () => void }) {
   const pr = P[user], pk = pr.key
   const [tab, setTab] = useState<Tab>('plan')
+  const [trackSub, setTrackSub] = useState<'summary' | 'weight' | 'water'>('summary')
+  const [foodsSub, setFoodsSub] = useState<'presets' | 'scanned' | 'dislikes'>('presets')
   const [wOff, setWOff] = useState(0)
   const wid = weekIdFor(wOff)
 
@@ -396,7 +398,7 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
 
       {/* Tabs */}
       <div className={s.tabs}>
-        {([['plan','📋 Plan'],['summary','📊'],['ideas','💡'],['presets','⭐'],['scanned','📷'],['dislikes','🚫'],['grocery','🛒'],['weight','⚖️'],['water','💧'],['coach','🤖']] as [Tab,string][]).map(([t, l]) =>
+        {([['plan','📋 Plan'],['track','📊 Track'],['ideas','💡 Ideas'],['foods','🍎 Foods'],['grocery','🛒 Grocery'],['coach','🤖 Coach']] as [Tab,string][]).map(([t, l]) =>
           <button key={t} className={`${s.tab} ${tab === t ? s.active : ''}`} onClick={() => setTab(t)}>{l}</button>
         )}
       </div>
@@ -463,17 +465,43 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
       </div>}
 
       {/* ═══ SUMMARY ═══ */}
-      {tab === 'summary' && <div>
-        <h2 className={s.secTitle}>📊 Weekly Summary</h2><p className={s.sub}>{wid}</p>
-        <div className={s.grid4}>
-          <div className={s.card}><small>Avg cal</small><b className={weekStats.avgCal <= eCal ? s.green : s.warn}>{weekStats.avgCal}<small>/{eCal}</small></b></div>
-          <div className={s.card}><small>Avg protein</small><b className={weekStats.avgP >= pr.protein ? s.green : s.warn}>{weekStats.avgP}g<small>/{pr.protein}g</small></b></div>
-          <div className={s.card}><small>On target</small><b>{weekStats.ot}/7</b></div>
-          <div className={s.card}><small>Adherence</small><b>{weekStats.adh}%</b></div>
+      {/* ═══ TRACK (Summary + Weight + Water) ═══ */}
+      {tab === 'track' && <div>
+        <div className={s.subTabs}>
+          {([['summary','📊 Summary'],['weight','⚖️ Weight'],['water','💧 Water']] as const).map(([k,l]) =>
+            <button key={k} className={`${s.subTab} ${trackSub === k ? s.active : ''}`} onClick={() => setTrackSub(k)}>{l}</button>
+          )}
         </div>
-        <h3 className={s.subHd}>Daily breakdown</h3>
-        {plan.days.map((day, di) => { const t = totals(day), ok = t.cal > 0 && t.cal <= eCal + 50; return <div key={di} className={`${s.sumRow} ${t.cal === 0 ? s.sumEmpty : ok ? s.sumGood : s.sumOver}`}><span className={s.sumDay}>{day.day}</span><span>{t.cal > 0 ? `${t.cal} cal · ${t.protein}g P` : '—'}</span><span>{t.cal > 0 ? (ok ? '✅' : '⚠️') : ''}</span></div> })}
-        {wStats && <div style={{marginTop:16}}><p className={s.sub}>Weight: <b>{wStats.cur} lbs</b> · 7d avg: <b>{wStats.a7}</b> · To goal: <b className={wStats.toG <= 0 ? s.green : ''}>{wStats.toG} lbs</b></p></div>}
+
+        {trackSub === 'summary' && <>
+          <div className={s.grid4}>
+            <div className={s.card}><small>Avg cal</small><b className={weekStats.avgCal <= eCal ? s.green : s.warn}>{weekStats.avgCal}<small>/{eCal}</small></b></div>
+            <div className={s.card}><small>Avg protein</small><b className={weekStats.avgP >= pr.protein ? s.green : s.warn}>{weekStats.avgP}g<small>/{pr.protein}g</small></b></div>
+            <div className={s.card}><small>On target</small><b>{weekStats.ot}/7</b></div>
+            <div className={s.card}><small>Adherence</small><b>{weekStats.adh}%</b></div>
+          </div>
+          <h3 className={s.subHd}>Daily breakdown</h3>
+          {plan.days.map((day, di) => { const t = totals(day), ok = t.cal > 0 && t.cal <= eCal + 50; return <div key={di} className={`${s.sumRow} ${t.cal === 0 ? s.sumEmpty : ok ? s.sumGood : s.sumOver}`}><span className={s.sumDay}>{day.day}</span><span>{t.cal > 0 ? `${t.cal} cal · ${t.protein}g P` : '—'}</span><span>{t.cal > 0 ? (ok ? '✅' : '⚠️') : ''}</span></div> })}
+          {wStats && <p className={s.sub} style={{marginTop:12}}>Weight: <b>{wStats.cur} lbs</b> · 7d avg: <b>{wStats.a7}</b> · To goal: <b className={wStats.toG <= 0 ? s.green : ''}>{wStats.toG} lbs</b></p>}
+        </>}
+
+        {trackSub === 'weight' && <>
+          <div className={s.inputRow}><input type="date" value={wDate} onChange={e => setWDate(e.target.value)} /><input type="number" value={wInput} onChange={e => setWInput(e.target.value)} placeholder="lbs" step="0.1" className={s.numInput} onKeyDown={e => { if (e.key === 'Enter') addW() }} /><button className={s.addBtn} onClick={addW}>Log</button></div>
+          <div className={s.inputRow}><small className={s.sub}>Goal:</small><input type="number" value={goal} onChange={e => setGW(+e.target.value || 0)} className={s.numInput} /><small className={s.sub}>lbs</small></div>
+          {wStats && <div className={s.grid4}><div className={s.card}><small>Current</small><b>{wStats.cur} lbs</b></div><div className={s.card}><small>7d avg</small><b>{wStats.a7}</b></div><div className={s.card}><small>30d avg</small><b>{wStats.a30}</b></div><div className={s.card}><small>To goal</small><b className={wStats.toG <= 0 ? s.green : s.warn}>{wStats.toG > 0 ? '-' : '+'}{Math.abs(wStats.toG)}</b></div></div>}
+          {(() => { const e = weights.filter(x => x.person === pk).sort((a, b) => a.date.localeCompare(b.date)); if (!e.length) return null; const mn = Math.min(...e.map(x => x.weight), goal) - 3, mx = Math.max(...e.map(x => x.weight)) + 3, rg = mx - mn || 1, gp = ((goal - mn) / rg) * 100
+            return <div className={s.chartBlock}><h3 className={s.subHd}>Progress</h3><div className={s.chart}><div className={s.goalLine} style={{ bottom: `${gp}%` }}><span>Goal: {goal}</span></div>{e.slice(-30).map((x, i) => { const p = ((x.weight - mn) / rg) * 100; const prev = i > 0 ? e[Math.max(0, e.indexOf(x) - 1)].weight : x.weight; return <div key={x.id} className={s.bar}><div className={`${s.barFill} ${x.weight <= prev ? s.barDown : s.barUp}`} style={{ height: `${p}%` }} /><small>{x.weight}</small><small className={s.sub}>{new Date(x.date + 'T12:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}</small></div> })}</div></div>
+          })()}
+          {weights.filter(x => x.person === pk).length > 0 && <div><h3 className={s.subHd}>Log</h3>{[...weights].filter(x => x.person === pk).reverse().map(e => <div key={e.id} className={s.logRow}><span className={s.sub}>{new Date(e.date + 'T12:00:00').toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })}</span><b>{e.weight} lbs</b><button className={s.delBtn} onClick={() => delW(e.id)}>×</button></div>)}</div>}
+        </>}
+
+        {trackSub === 'water' && <>
+          <div className={s.waterMain}><div className={s.waterBig}>{todayW?.glasses || 0}</div><p className={s.sub}>glasses today</p><p className={s.green}>{(todayW?.glasses || 0) >= 8 ? '✅ Goal!' : `${8 - (todayW?.glasses || 0)} more`}</p>
+            <div className={s.waterBtns}><button className={s.waterMinBtn} onClick={subWater}>−</button><button className={s.waterAddBtn} onClick={addWater}>+ Add glass</button></div>
+          </div>
+          <h3 className={s.subHd}>Last 7 days</h3>
+          <div className={s.waterHist}>{Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); const ds = d.toISOString().split('T')[0]; const en = water.find(w => w.person === pk && w.date === ds); return <div key={ds} className={s.waterDay}><small className={s.sub}>{d.toLocaleDateString('en', { weekday: 'short' })}</small><div className={`${s.waterBar} ${(en?.glasses || 0) >= 8 ? s.waterFull : ''}`} style={{ height: Math.min((en?.glasses || 0) / 8, 1) * 60 }} /><small>{en?.glasses || 0}</small></div> })}</div>
+        </>}
       </div>}
 
       {/* ═══ IDEAS ═══ */}
@@ -494,46 +522,89 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
         </div>}
       </div>}
 
-      {/* ═══ PRESETS ═══ */}
-      {tab === 'presets' && <div>
-        <h2 className={s.secTitle}>⭐ Presets</h2>
-        {presets.length === 0 ? <p className={s.empty}>No presets yet.</p> : (['breakfast','lunch','dinner','snack'] as const).map(mt => {
-          const items = presets.filter(p => p.mealType === mt); if (!items.length) return null
-          return <div key={mt}><h3 className={s.subHd}>{mt[0].toUpperCase() + mt.slice(1)}</h3>{items.map(p => <div key={p.id} className={s.preCard}>
-            <div className={s.preHdr} onClick={() => setExpPreset(expPreset === p.id ? null : p.id)}><div><b>{p.name}</b><br/><small className={s.sub}>{p.who === 'shared' ? 'Shared' : p.who === 'his' ? 'Evan' : 'Liv'} · {p.cal} cal · P {p.protein}g</small></div><span className={s.chev}>{expPreset === p.id ? '▲' : '▼'}</span></div>
-            {expPreset === p.id && <div className={s.preBody}>{p.portions.map((pt, i) => <div key={i} className={s.preRow}><span>{pt.ingredient}</span><span className={s.sub}>{pt.amount} · {pt.cal} cal</span></div>)}<button className={s.dangerBtn} onClick={() => delPr(p.id)}>Delete</button></div>}
-          </div>)}</div>
-        })}
-      </div>}
+      {/* ═══ FOODS (Presets + Scanned + Dislikes) ═══ */}
+      {tab === 'foods' && <div>
+        <div className={s.subTabs}>
+          {([['presets','⭐ Presets'],['scanned','📷 Scanned'],['dislikes','🚫 Dislikes']] as const).map(([k,l]) =>
+            <button key={k} className={`${s.subTab} ${foodsSub === k ? s.active : ''}`} onClick={() => setFoodsSub(k)}>{l}</button>
+          )}
+        </div>
 
-      {/* ═══ SCANNED ═══ */}
-      {tab === 'scanned' && <div>
-        <h2 className={s.secTitle}>📷 Scanned Foods</h2><p className={s.sub}>Shared between both users. Feeds into meal calculations.</p>
-        <div className={s.scanRow}><input type="text" inputMode="numeric" value={bcInput} placeholder="Barcode #" onChange={e => { setBcInput(e.target.value); setScanErr('') }} onKeyDown={e => { if (e.key === 'Enter') doScan() }} /><button className={s.scanBtn} onClick={() => doScan()} disabled={scanLoading || !bcInput.trim()}>{scanLoading ? '…' : '🔍'}</button></div>
-        <label className={s.camBtn}>📸 Scan with camera<input type="file" accept="image/*" capture="environment" className={s.hidden} onChange={async e => {
-          const file = e.target.files?.[0]; if (!file) return; setScanErr('')
-          if ('BarcodeDetector' in window) { try { const bmp = await createImageBitmap(file); const det = new (window as any).BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128'] }); const res = await det.detect(bmp); if (res.length > 0) { setBcInput(res[0].rawValue); await doScan(res[0].rawValue) } else setScanErr('No barcode found.') } catch { setScanErr('Could not read barcode.') } }
-          else setScanErr('Not supported. Enter manually.'); e.target.value = ''
-        }} /></label>
-        {scanErr && <p className={s.warn}>{scanErr}</p>}
-        <input type="text" className={s.searchInput} placeholder="🔍 Search scanned foods..." value={scanSearch} onChange={e => setScanSearch(e.target.value)} />
-        {filteredScanned.length === 0 ? <p className={s.empty}>{scanSearch ? 'No matches.' : 'No foods scanned yet.'}</p> :
-          <div className={s.scanList}><small className={s.sub}>{filteredScanned.length} food{filteredScanned.length !== 1 ? 's' : ''}</small>
-            {filteredScanned.map(f => <div key={f.id} className={s.scanCard}>
-              <div className={s.scanHdr} onClick={() => setExpScan(expScan === f.id ? null : f.id)}>
-                <div className={s.scanInfo}>{f.imageUrl && <img src={f.imageUrl} alt="" className={s.scanImg} />}<div><b>{f.name}</b>{f.brand && <br/>}{f.brand && <small className={s.sub}>{f.brand}</small>}</div></div>
-                <small className={s.sub}><b>{f.cal}</b> cal · P {f.protein}g</small>
-              </div>
-              {expScan === f.id && <div className={s.scanBody}><div className={s.grid4}><div><small>Serving</small><b>{f.servingSize}</b></div><div><small>Carbs</small><b>{f.carbs}g</b></div><div><small>Fat</small><b>{f.fat}g</b></div><div><small>Fiber</small><b>{f.fiber}g</b></div></div><button className={s.dangerBtn} onClick={() => delScan(f.id)}>Remove</button></div>}
-            </div>)}
-          </div>}
-      </div>}
+        {foodsSub === 'presets' && <>
+          {presets.length === 0 ? <p className={s.empty}>No presets yet. Save meals from the Plan tab.</p> : (['breakfast','lunch','dinner','snack'] as const).map(mt => {
+            const items = presets.filter(p => p.mealType === mt); if (!items.length) return null
+            return <div key={mt}><h3 className={s.subHd}>{mt[0].toUpperCase() + mt.slice(1)}</h3>{items.map(p => <div key={p.id} className={s.preCard}>
+              <div className={s.preHdr} onClick={() => setExpPreset(expPreset === p.id ? null : p.id)}><div><b>{p.name}</b><br/><small className={s.sub}>{p.who === 'shared' ? 'Shared' : p.who === 'his' ? 'Evan' : 'Liv'} · {p.cal} cal · P {p.protein}g</small></div><span className={s.chev}>{expPreset === p.id ? '▲' : '▼'}</span></div>
+              {expPreset === p.id && <div className={s.preBody}>{p.portions.map((pt, i) => <div key={i} className={s.preRow}><span>{pt.ingredient}</span><span className={s.sub}>{pt.amount} · {pt.cal} cal</span></div>)}<button className={s.dangerBtn} onClick={() => delPr(p.id)}>Delete</button></div>}
+            </div>)}</div>
+          })}
+        </>}
 
-      {/* ═══ DISLIKES ═══ */}
-      {tab === 'dislikes' && <div>
-        <h2 className={s.secTitle}>🚫 {pr.label}'s Dislikes</h2>
-        <div className={s.inputRow}><input type="text" value={disInput} placeholder="Add food..." onChange={e => setDisInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { addDis(disInput); setDisInput('') } }} /><button className={s.addBtn} onClick={() => { addDis(disInput); setDisInput('') }}>Add</button></div>
-        <div className={s.tagList}>{myDis().length === 0 ? <span className={s.sub}>None</span> : myDis().map(i => <span key={i} className={s.tag}>{i}<button onClick={() => remDis(i)}>×</button></span>)}</div>
+        {foodsSub === 'scanned' && <>
+          <p className={s.sub} style={{marginBottom:8}}>Shared between both users. Feeds into meal calculations.</p>
+          <div className={s.scanRow}><input type="text" inputMode="numeric" value={bcInput} placeholder="Barcode #" onChange={e => { setBcInput(e.target.value); setScanErr('') }} onKeyDown={e => { if (e.key === 'Enter') doScan() }} /><button className={s.scanBtn} onClick={() => doScan()} disabled={scanLoading || !bcInput.trim()}>{scanLoading ? '…' : '🔍'}</button></div>
+
+          {/* Live camera scanner */}
+          <button className={s.camBtn} onClick={() => {
+            // Open live camera scanner
+            const vid = document.createElement('video')
+            vid.setAttribute('autoplay', ''); vid.setAttribute('playsinline', '')
+            const overlay = document.createElement('div')
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;'
+            const closeBtn = document.createElement('button')
+            closeBtn.textContent = '✕ Close'; closeBtn.style.cssText = 'position:absolute;top:20px;right:20px;padding:12px 20px;font-size:16px;background:#fff;border:none;border-radius:8px;cursor:pointer;z-index:10;'
+            const status = document.createElement('div')
+            status.textContent = 'Point camera at barcode...'; status.style.cssText = 'position:absolute;bottom:40px;color:#fff;font-size:16px;font-weight:600;'
+            vid.style.cssText = 'width:100%;max-height:70vh;object-fit:cover;border-radius:12px;'
+            overlay.appendChild(closeBtn); overlay.appendChild(vid); overlay.appendChild(status)
+            document.body.appendChild(overlay)
+            let stopped = false
+            const cleanup = () => { stopped = true; const tracks = vid.srcObject as MediaStream; tracks?.getTracks().forEach(t => t.stop()); overlay.remove() }
+            closeBtn.onclick = cleanup
+
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+              .then(stream => {
+                vid.srcObject = stream; vid.play()
+                if (!('BarcodeDetector' in window)) { status.textContent = 'BarcodeDetector not supported. Enter manually.'; setTimeout(cleanup, 2000); return }
+                const det = new (window as any).BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128'] })
+                const scan = async () => {
+                  if (stopped) return
+                  try {
+                    const res = await det.detect(vid)
+                    if (res.length > 0) {
+                      status.textContent = `Found: ${res[0].rawValue}`
+                      cleanup()
+                      setBcInput(res[0].rawValue)
+                      doScan(res[0].rawValue)
+                      return
+                    }
+                  } catch {}
+                  requestAnimationFrame(scan)
+                }
+                vid.onloadeddata = () => scan()
+              })
+              .catch(() => { status.textContent = 'Camera access denied.'; setTimeout(cleanup, 2000) })
+          }}>📸 Open camera scanner</button>
+
+          {scanErr && <p className={s.warn}>{scanErr}</p>}
+          <input type="text" className={s.searchInput} placeholder="🔍 Search scanned foods..." value={scanSearch} onChange={e => setScanSearch(e.target.value)} />
+          {filteredScanned.length === 0 ? <p className={s.empty}>{scanSearch ? 'No matches.' : 'No foods scanned yet.'}</p> :
+            <div className={s.scanList}><small className={s.sub}>{filteredScanned.length} food{filteredScanned.length !== 1 ? 's' : ''}</small>
+              {filteredScanned.map(f => <div key={f.id} className={s.scanCard}>
+                <div className={s.scanHdr} onClick={() => setExpScan(expScan === f.id ? null : f.id)}>
+                  <div className={s.scanInfo}>{f.imageUrl && <img src={f.imageUrl} alt="" className={s.scanImg} />}<div><b>{f.name}</b>{f.brand && <br/>}{f.brand && <small className={s.sub}>{f.brand}</small>}</div></div>
+                  <small className={s.sub}><b>{f.cal}</b> cal · P {f.protein}g</small>
+                </div>
+                {expScan === f.id && <div className={s.scanBody}><div className={s.grid4}><div><small>Serving</small><b>{f.servingSize}</b></div><div><small>Carbs</small><b>{f.carbs}g</b></div><div><small>Fat</small><b>{f.fat}g</b></div><div><small>Fiber</small><b>{f.fiber}g</b></div></div><button className={s.dangerBtn} onClick={() => delScan(f.id)}>Remove</button></div>}
+              </div>)}
+            </div>}
+        </>}
+
+        {foodsSub === 'dislikes' && <>
+          <h3 className={s.subHd}>{pr.label}'s Dislikes</h3>
+          <div className={s.inputRow}><input type="text" value={disInput} placeholder="Add food..." onChange={e => setDisInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { addDis(disInput); setDisInput('') } }} /><button className={s.addBtn} onClick={() => { addDis(disInput); setDisInput('') }}>Add</button></div>
+          <div className={s.tagList}>{myDis().length === 0 ? <span className={s.sub}>None</span> : myDis().map(i => <span key={i} className={s.tag}>{i}<button onClick={() => remDis(i)}>×</button></span>)}</div>
+        </>}
       </div>}
 
       {/* ═══ GROCERY ═══ */}
@@ -542,28 +613,6 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
         {grocLoad && <div className={s.loading}><div className={s.spinner}/></div>}
         {!grocLoad && !grocery && <p className={s.empty}>Fill in meals, then generate.</p>}
         {!grocLoad && grocery && <div className={s.grocList}>{CATS.map(cat => { const items = grocery.filter(i => i.category === cat); if (!items.length) return null; return <div key={cat}><h3 className={s.catHd}>{cat}</h3><div className={s.grocItems}>{items.map((item, i) => <div key={i} className={s.grocItem}><span>{item.name}</span><span className={s.sub}>{item.amount}</span></div>)}</div></div> })}</div>}
-      </div>}
-
-      {/* ═══ WEIGHT ═══ */}
-      {tab === 'weight' && <div>
-        <h2 className={s.secTitle}>⚖️ {pr.label}'s Weight</h2>
-        <div className={s.inputRow}><input type="date" value={wDate} onChange={e => setWDate(e.target.value)} /><input type="number" value={wInput} onChange={e => setWInput(e.target.value)} placeholder="lbs" step="0.1" className={s.numInput} onKeyDown={e => { if (e.key === 'Enter') addW() }} /><button className={s.addBtn} onClick={addW}>Log</button></div>
-        <div className={s.inputRow}><small className={s.sub}>Goal:</small><input type="number" value={goal} onChange={e => setGW(+e.target.value || 0)} className={s.numInput} /><small className={s.sub}>lbs</small></div>
-        {wStats && <div className={s.grid4}><div className={s.card}><small>Current</small><b>{wStats.cur} lbs</b></div><div className={s.card}><small>7d avg</small><b>{wStats.a7}</b></div><div className={s.card}><small>30d avg</small><b>{wStats.a30}</b></div><div className={s.card}><small>To goal</small><b className={wStats.toG <= 0 ? s.green : s.warn}>{wStats.toG > 0 ? '-' : '+'}{Math.abs(wStats.toG)}</b></div></div>}
-        {(() => { const e = weights.filter(x => x.person === pk).sort((a, b) => a.date.localeCompare(b.date)); if (!e.length) return null; const mn = Math.min(...e.map(x => x.weight), goal) - 3, mx = Math.max(...e.map(x => x.weight)) + 3, rg = mx - mn || 1, gp = ((goal - mn) / rg) * 100
-          return <div className={s.chartBlock}><h3 className={s.subHd}>Progress</h3><div className={s.chart}><div className={s.goalLine} style={{ bottom: `${gp}%` }}><span>Goal: {goal}</span></div>{e.slice(-30).map((x, i) => { const p = ((x.weight - mn) / rg) * 100; const prev = i > 0 ? e[Math.max(0, e.indexOf(x) - 1)].weight : x.weight; return <div key={x.id} className={s.bar}><div className={`${s.barFill} ${x.weight <= prev ? s.barDown : s.barUp}`} style={{ height: `${p}%` }} /><small>{x.weight}</small><small className={s.sub}>{new Date(x.date + 'T12:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}</small></div> })}</div></div>
-        })()}
-        {weights.filter(x => x.person === pk).length > 0 && <div><h3 className={s.subHd}>Log</h3>{[...weights].filter(x => x.person === pk).reverse().map(e => <div key={e.id} className={s.logRow}><span className={s.sub}>{new Date(e.date + 'T12:00:00').toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })}</span><b>{e.weight} lbs</b><button className={s.delBtn} onClick={() => delW(e.id)}>×</button></div>)}</div>}
-      </div>}
-
-      {/* ═══ WATER ═══ */}
-      {tab === 'water' && <div>
-        <h2 className={s.secTitle}>💧 Water</h2>
-        <div className={s.waterMain}><div className={s.waterBig}>{todayW?.glasses || 0}</div><p className={s.sub}>glasses today</p><p className={s.green}>{(todayW?.glasses || 0) >= 8 ? '✅ Goal!' : `${8 - (todayW?.glasses || 0)} more`}</p>
-          <div className={s.waterBtns}><button className={s.waterMinBtn} onClick={subWater}>−</button><button className={s.waterAddBtn} onClick={addWater}>+ Add glass</button></div>
-        </div>
-        <h3 className={s.subHd}>Last 7 days</h3>
-        <div className={s.waterHist}>{Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); const ds = d.toISOString().split('T')[0]; const en = water.find(w => w.person === pk && w.date === ds); return <div key={ds} className={s.waterDay}><small className={s.sub}>{d.toLocaleDateString('en', { weekday: 'short' })}</small><div className={`${s.waterBar} ${(en?.glasses || 0) >= 8 ? s.waterFull : ''}`} style={{ height: Math.min((en?.glasses || 0) / 8, 1) * 60 }} /><small>{en?.glasses || 0}</small></div> })}</div>
       </div>}
 
       {/* ═══ COACH ═══ */}
