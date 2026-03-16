@@ -204,7 +204,7 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
 
   // Grocery
   const genGrocery = async () => { setGrocLoad(true); setTab('grocery'); try { const r = await fetch('/api/grocery-list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }) }); const { items } = await r.json(); setGrocery(items); setGrocChecked(new Set()); localStorage.removeItem('groc-checked') } catch { showToast('Failed') }; setGrocLoad(false) }
-  const toggleGrocItem = (i: number) => { const n = new Set(grocChecked); if (n.has(i)) n.delete(i); else n.add(i); setGrocChecked(n); localStorage.setItem('groc-checked', JSON.stringify([...n])) }
+  const toggleGrocItem = (i: number) => { const n = new Set(grocChecked); if (n.has(i)) n.delete(i); else n.add(i); setGrocChecked(n); localStorage.setItem('groc-checked', JSON.stringify(Array.from(n))) }
   const shareGrocery = () => { if (!grocery) return; const text = grocery.reduce((a, item) => a + `${item.name} — ${item.amount}\n`, 'Grocery List:\n\n'); if (navigator.share) navigator.share({ title: 'Grocery List', text }).catch(() => {}); else { navigator.clipboard.writeText(text); showToast('Copied!') } }
 
   // Ideas
