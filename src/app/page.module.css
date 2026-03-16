@@ -1,0 +1,276 @@
+.app {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.header {
+  margin-bottom: 1.5rem;
+}
+.header h1 {
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text);
+}
+.header p {
+  font-size: 14px;
+  color: var(--text2);
+  margin-top: 4px;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 0.5px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+.tab {
+  padding: 8px 16px;
+  font-size: 14px;
+  color: var(--text2);
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color .15s;
+}
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--text);
+  font-weight: 500;
+}
+.tab:hover:not(.active) { color: var(--text); }
+
+/* Stats */
+.statsBar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 1.25rem;
+}
+@media (max-width: 600px) {
+  .statsBar { grid-template-columns: repeat(2, 1fr); }
+}
+.statCard {
+  background: var(--bg2);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.statLabel { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+.statValue { font-size: 20px; font-weight: 500; }
+.statSub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+/* Generate button */
+.generateBtn {
+  width: 100%;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius);
+  margin-bottom: 1.25rem;
+  transition: opacity .15s;
+}
+.generateBtn:hover { opacity: .85; }
+.generateBtn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Empty state */
+.emptyState {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text2);
+}
+.emptyIcon { font-size: 32px; margin-bottom: 12px; }
+.emptyState p { font-size: 14px; line-height: 1.6; }
+
+/* Day grid */
+.dayGrid { display: flex; flex-direction: column; gap: 12px; }
+
+.dayCard {
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg);
+}
+.dayHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg2);
+  border-bottom: 0.5px solid var(--border);
+}
+.dayName { font-size: 14px; font-weight: 500; min-width: 90px; }
+.dayTheme {
+  font-size: 12px;
+  color: var(--text2);
+  background: var(--bg);
+  border: 0.5px solid var(--border2);
+  border-radius: 99px;
+  padding: 2px 10px;
+}
+
+.mealsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 520px) {
+  .mealsGrid { grid-template-columns: 1fr; }
+}
+
+.personCol { padding: 12px 14px; }
+.personCol:first-child { border-right: 0.5px solid var(--border); }
+@media (max-width: 520px) {
+  .personCol:first-child { border-right: none; border-bottom: 0.5px solid var(--border); }
+}
+
+.personLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 8px;
+}
+.mealRow { margin-bottom: 8px; }
+.mealType { font-size: 11px; color: var(--text3); margin-bottom: 3px; }
+
+.mealCard {
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  position: relative;
+  transition: opacity .2s;
+}
+.mealCard:hover .swapBtn { opacity: 1; }
+.mealLoading { opacity: .5; }
+
+.mealName { font-size: 13px; font-weight: 500; padding-right: 26px; line-height: 1.4; }
+.mealMacros {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text2);
+  flex-wrap: wrap;
+}
+.mealMacros strong { color: var(--text); }
+
+.swapBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: 0.5px solid var(--border2);
+  border-radius: 4px;
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text2);
+}
+.swapBtn:hover { background: var(--bg2); color: var(--text); }
+
+.dinnerRow {
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--border);
+  background: var(--bg2);
+}
+.dinnerLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 6px;
+}
+.dinnerRow .mealCard { background: var(--bg); }
+
+.dailyTotals {
+  display: flex;
+  gap: 16px;
+  padding: 8px 14px;
+  border-top: 0.5px solid var(--border);
+  font-size: 12px;
+  color: var(--text2);
+}
+.dailyTotals strong { color: var(--text); }
+
+/* Preferences */
+.prefsPanel { display: flex; flex-direction: column; gap: 1.25rem; }
+.prefsSection h2 { font-size: 15px; font-weight: 500; margin-bottom: 8px; }
+.prefsSection textarea {
+  width: 100%;
+  height: 80px;
+  padding: 10px 12px;
+  font-size: 13px;
+  border: 0.5px solid var(--border2);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+}
+.prefsSection textarea:focus { outline: none; border-color: var(--text3); }
+
+/* Dislikes */
+.dislikesGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 520px) {
+  .dislikesGrid { grid-template-columns: 1fr; }
+}
+.dislikeCol h2 { font-size: 15px; font-weight: 500; margin-bottom: 12px; }
+.dislikeInputRow { display: flex; gap: 6px; margin-bottom: 12px; }
+.dislikeInputRow input {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 0.5px solid var(--border2);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+}
+.dislikeInputRow input:focus { outline: none; }
+.addBtn {
+  padding: 8px 14px;
+  font-size: 13px;
+  border: 0.5px solid var(--border2);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  white-space: nowrap;
+}
+.addBtn:hover { background: var(--bg2); }
+
+.dislikeList { display: flex; flex-wrap: wrap; gap: 6px; }
+.dislikeTag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border2);
+  border-radius: 99px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+.dislikeTag button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text3);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+}
+.dislikeTag button:hover { color: var(--text); }
+.noDislikes { font-size: 13px; color: var(--text3); font-style: italic; }
