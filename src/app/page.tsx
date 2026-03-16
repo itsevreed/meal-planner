@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { MealPlan, DayPlan, PersonMeal, MacroMeal, PortionItem, Dislikes, GroceryItem, MealIdea, PresetMeal, WeightEntry } from '@/lib/types'
+import type { MealPlan, DayPlan, PersonMeal, MacroMeal, PortionItem, Dislikes, GroceryItem, MealIdea, PresetMeal, WeightEntry, ScannedFood } from '@/lib/types'
 import styles from './page.module.css'
 
 const DAYS_META = [
@@ -24,13 +24,13 @@ function emptyPersonMeal(): PersonMeal { return { input: '', meal: null } }
 function emptyDay(meta: typeof DAYS_META[0]): DayPlan {
   return {
     day: meta.name, theme: meta.theme,
-    his: { breakfast: emptyPersonMeal(), lunch: emptyPersonMeal() },
-    her: { breakfast: emptyPersonMeal(), lunch: emptyPersonMeal() },
+    his: { breakfast: emptyPersonMeal(), lunch: emptyPersonMeal(), snack: emptyPersonMeal() },
+    her: { breakfast: emptyPersonMeal(), lunch: emptyPersonMeal(), snack: emptyPersonMeal() },
     dinner: emptyPersonMeal(),
   }
 }
 
-type Tab = 'plan' | 'ideas' | 'presets' | 'dislikes' | 'grocery' | 'weight'
+type Tab = 'plan' | 'ideas' | 'presets' | 'dislikes' | 'grocery' | 'weight' | 'scanned'
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null)
@@ -109,6 +109,13 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
   const [weightInput, setWeightInput] = useState('')
   const [weightDate, setWeightDate] = useState(() => new Date().toISOString().split('T')[0])
 
+  // Scanned foods
+  const [scannedFoods, setScannedFoods] = useState<ScannedFood[]>([])
+  const [barcodeInput, setBarcodeInput] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState('')
+  const [expandedScanned, setExpandedScanned] = useState<string | null>(null)
+
   // Locks
   const [lockedMeals, setLockedMeals] = useState<Set<string>>(new Set())
   const toggleLock = (di: number, who: string, mt: string) => {
@@ -142,8 +149,8 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
         const d = raw?.days?.[i] ?? {}
         return {
           day: meta.name, theme: meta.theme,
-          his: { breakfast: safeMeal(d?.his?.breakfast), lunch: safeMeal(d?.his?.lunch) },
-          her: { breakfast: safeMeal(d?.her?.breakfast), lunch: safeMeal(d?.her?.lunch) },
+          his: { breakfast: safeMeal(d?.his?.breakfast), lunch: safeMeal(d?.his?.lunch), snack: safeMeal(d?.his?.snack) },
+          her: { breakfast: safeMeal(d?.her?.breakfast), lunch: safeMeal(d?.her?.lunch), snack: safeMeal(d?.her?.snack) },
           dinner: safeMeal(d?.dinner),
         }
       })
@@ -164,6 +171,9 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
 
       const { data: wd } = await supabase.from('weight_entries').select('*').order('date', { ascending: true })
       if (wd) setWeightEntries(wd.map((w: any) => ({ id: w.id, person: w.person, weight: w.weight, date: w.date, createdAt: w.created_at })))
+
+      const { data: sf } = await supabase.from('scanned_foods').select('*').order('created_at', { ascending: false })
+      if (sf) setScannedFoods(sf.map((s: any) => ({ id: s.id, barcode: s.barcode, name: s.name, brand: s.brand, servingSize: s.serving_size, cal: s.cal, protein: s.protein, carbs: s.carbs, fat: s.fat, fiber: s.fiber || 0, sugar: s.sugar || 0, imageUrl: s.image_url || '', createdAt: s.created_at })))
     } catch {}
     setLoading(false)
   }, [])
@@ -188,7 +198,7 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
   }
 
   // ── Calculate meal ──
-  const calculateMeal = async (di: number, mealType: 'breakfast' | 'lunch' | 'dinner', input: string) => {
+  const calculateMeal = async (di: number, mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack', input: string) => {
     if (!input.trim()) return
     const who = mealType === 'dinner' ? 'shared' : personKey
     const key = `${di}-${who}-${mealType}`
@@ -200,25 +210,31 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
     const remainingCals = profile.calTarget - dinnerCal
     const personDislikes = mealType === 'dinner' ? getAllDislikes() : getMyDislikes()
 
-    // Check locked sibling
+    // Check locked siblings (all of breakfast, lunch, snack except current)
     let lockedSiblingCals = 0
     if (mealType !== 'dinner') {
-      const sibling = mealType === 'breakfast' ? 'lunch' : 'breakfast'
-      if (isLocked(di, personKey, sibling) && day[personKey][sibling].meal) {
-        lockedSiblingCals = day[personKey][sibling].meal!.cal
+      const siblings = (['breakfast', 'lunch', 'snack'] as const).filter(m => m !== mealType)
+      for (const sib of siblings) {
+        if (isLocked(di, personKey, sib) && day[personKey][sib].meal) {
+          lockedSiblingCals += day[personKey][sib].meal!.cal
+        }
       }
     }
+
+    // Pass scanned foods for accurate nutrition lookup
+    const scannedFoodsData = scannedFoods.map(f => ({ name: f.name, brand: f.brand, servingSize: f.servingSize, cal: f.cal, protein: f.protein, carbs: f.carbs, fat: f.fat }))
 
     try {
       const res = await fetch('/api/calculate-meal', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          mealInput: input, mealType,
+          mealInput: input, mealType: mealType === 'snack' ? 'snack' : mealType,
           person: mealType === 'dinner' ? 'shared' : personKey,
           remainingCals, targetProtein: profile.proteinTarget,
           dinnerMacros: day.dinner.meal,
           dislikes: personDislikes,
           lockedMealsCals: lockedSiblingCals,
+          scannedFoods: scannedFoodsData,
         }),
       })
       const { meal } = await res.json()
@@ -327,9 +343,32 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
   }
   const deleteWeightEntry = async (id: string) => { await supabase.from('weight_entries').delete().eq('id', id); setWeightEntries(prev => prev.filter(w => w.id !== id)) }
 
+  // ── Barcode scanning ──
+  const scanBarcode = async () => {
+    if (!barcodeInput.trim()) return
+    setScanning(true); setScanError('')
+    try {
+      const res = await fetch('/api/scan-barcode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barcode: barcodeInput.trim() }) })
+      const data = await res.json()
+      if (data.error) { setScanError(data.error); setScanning(false); return }
+      const f = data.food
+      // Save to Supabase
+      const { data: saved } = await supabase.from('scanned_foods').insert({
+        barcode: f.barcode, name: f.name, brand: f.brand, serving_size: f.servingSize,
+        cal: f.cal, protein: f.protein, carbs: f.carbs, fat: f.fat, fiber: f.fiber, sugar: f.sugar, image_url: f.imageUrl,
+      }).select().single()
+      if (saved) {
+        setScannedFoods(prev => [{ id: saved.id, barcode: saved.barcode, name: saved.name, brand: saved.brand, servingSize: saved.serving_size, cal: saved.cal, protein: saved.protein, carbs: saved.carbs, fat: saved.fat, fiber: saved.fiber || 0, sugar: saved.sugar || 0, imageUrl: saved.image_url || '', createdAt: saved.created_at }, ...prev])
+      }
+      setBarcodeInput('')
+    } catch { setScanError('Failed to scan. Check the barcode and try again.') }
+    setScanning(false)
+  }
+  const deleteScannedFood = async (id: string) => { await supabase.from('scanned_foods').delete().eq('id', id); setScannedFoods(prev => prev.filter(s => s.id !== id)) }
+
   // ── Computed ──
   const getDayTotals = (day: DayPlan) => {
-    const meals = [day[personKey].breakfast.meal, day[personKey].lunch.meal, day.dinner.meal]
+    const meals = [day[personKey].breakfast.meal, day[personKey].lunch.meal, day[personKey].snack.meal, day.dinner.meal]
     return meals.reduce((a, m) => ({ cal: a.cal + (m?.cal || 0), protein: a.protein + (m?.protein || 0), carbs: a.carbs + (m?.carbs || 0), fat: a.fat + (m?.fat || 0) }), { cal: 0, protein: 0, carbs: 0, fat: 0 })
   }
 
@@ -380,7 +419,7 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
 
       {/* TABS */}
       <div className={styles.tabs}>
-        {([['plan', '📋 Plan'], ['ideas', '💡 Ideas'], ['presets', '⭐ Presets'], ['dislikes', '🚫 Dislikes'], ['grocery', '🛒 Grocery'], ['weight', '⚖️ Weight']] as [Tab, string][]).map(([t, label]) => (
+        {([['plan', '📋 Plan'], ['ideas', '💡 Ideas'], ['presets', '⭐ Presets'], ['scanned', '📷 Scanned'], ['dislikes', '🚫 Dislikes'], ['grocery', '🛒 Grocery'], ['weight', '⚖️ Weight']] as [Tab, string][]).map(([t, label]) => (
           <button key={t} className={`${styles.tab} ${tab === t ? styles.active : ''}`} onClick={() => setTab(t)}>{label}</button>
         ))}
       </div>
@@ -390,7 +429,7 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
         <div>
           <div className={styles.howTo}>
             <span className={styles.howToIcon}>→</span>
-            <div><strong>How it works:</strong> Enter dinner first (shared with {user === 'evan' ? 'Liv' : 'Evan'}). Then add your breakfast &amp; lunch. Claude calculates exact portions to hit your {profile.calTarget} cal target. 🔒 Lock a meal to fix it, then recalculate the other to fill your remaining budget.</div>
+            <div><strong>How it works:</strong> Enter dinner first (shared with {user === 'evan' ? 'Liv' : 'Evan'}). Then add your breakfast, lunch &amp; optional snack. Claude calculates exact portions to hit your {profile.calTarget} cal target. 🔒 Lock a meal to fix it, then recalculate others to fill your remaining budget.</div>
           </div>
 
           <div className={styles.dayGrid}>
@@ -447,7 +486,7 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
                       {/* REMAINING BUDGET */}
                       {dinnerCal > 0 && (
                         <div className={`${styles.budgetBar} ${remaining < 0 ? styles.budgetOver : ''}`}>
-                          {remaining > 0 ? `${remaining} cal remaining for breakfast + lunch` : `${Math.abs(remaining)} cal over budget!`}
+                          {remaining > 0 ? `${remaining} cal remaining for breakfast + lunch + snack` : `${Math.abs(remaining)} cal over budget!`}
                         </div>
                       )}
 
@@ -496,6 +535,30 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
                             onCopy={day[personKey].lunch.meal ? () => setCopyTarget({ meal: day[personKey].lunch, who: personKey, mealType: 'lunch' }) : undefined}
                           />
                           <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ di, mealType: 'lunch' })}>⭐</button>
+                        </div>
+                      </div>
+
+                      {/* SNACK */}
+                      <div className={styles.mealBlock}>
+                        <div className={styles.sectionLabel}>🍎 Snack <span className={styles.sectionLabelSub}>(optional)</span></div>
+                        <div className={styles.mealInputWithPreset}>
+                          <MealInput
+                            placeholder="e.g. protein shake, greek yogurt, almonds"
+                            value={day[personKey].snack.input}
+                            meal={day[personKey].snack.meal}
+                            calcKey={`${di}-${personKey}-snack`}
+                            calculating={calculating}
+                            onSubmit={input => calculateMeal(di, 'snack', input)}
+                            onChange={v => updateDay(di, d => ({ ...d, [personKey]: { ...d[personKey], snack: { ...d[personKey].snack, input: v } } }))}
+                            editable={!isLocked(di, personKey, 'snack')}
+                            locked={isLocked(di, personKey, 'snack')}
+                            onToggleLock={day[personKey].snack.meal ? () => toggleLock(di, personKey, 'snack') : undefined}
+                            onRecalculate={(pi, amt) => recalculatePortions(di, 'snack', pi, amt)}
+                            onDeleteIngredient={pi => deleteIngredient(di, 'snack', pi)}
+                            onSavePreset={day[personKey].snack.meal ? () => saveAsPreset(day[personKey].snack.meal!, 'snack') : undefined}
+                            onCopy={day[personKey].snack.meal ? () => setCopyTarget({ meal: day[personKey].snack, who: personKey, mealType: 'snack' }) : undefined}
+                          />
+                          <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ di, mealType: 'snack' as any })}>⭐</button>
                         </div>
                       </div>
 
@@ -644,6 +707,81 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
                 if (!items.length) return null
                 return (<div key={cat} className={styles.groceryCategory}><h3>{cat}</h3><div className={styles.groceryItems}>{items.map((item, i) => (<div key={i} className={styles.groceryItem}><span className={styles.groceryName}>{item.name}</span><span className={styles.groceryAmount}>{item.amount}</span></div>))}</div></div>)
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ SCANNED FOODS TAB ═══ */}
+      {tab === 'scanned' && (
+        <div>
+          <div className={styles.sectionIntro}>
+            <h2>📷 Scanned Foods Database</h2>
+            <p>Scan barcodes to build your personal food database. When you type ingredients in meal inputs, Claude will use exact nutrition data from your scans instead of estimates.</p>
+          </div>
+
+          {/* Barcode input */}
+          <div className={styles.scanInputSection}>
+            <div className={styles.scanInputRow}>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={barcodeInput}
+                placeholder="Enter barcode number..."
+                onChange={e => { setBarcodeInput(e.target.value); setScanError('') }}
+                onKeyDown={e => { if (e.key === 'Enter') scanBarcode() }}
+                disabled={scanning}
+              />
+              <button className={styles.scanBtn} onClick={scanBarcode} disabled={scanning || !barcodeInput.trim()}>
+                {scanning ? <><span className={styles.btnSpinner} /> Looking up...</> : '🔍 Scan'}
+              </button>
+            </div>
+            {scanError && <div className={styles.scanError}>{scanError}</div>}
+            <p className={styles.scanHint}>Enter the barcode number printed below the barcode lines on any food package. Data sourced from Open Food Facts (free, community database).</p>
+          </div>
+
+          {/* Scanned foods list */}
+          {scannedFoods.length === 0 ? (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyIcon}>📷</div>
+              <p>No foods scanned yet. Enter a barcode above to start building your database.</p>
+            </div>
+          ) : (
+            <div className={styles.scannedList}>
+              <div className={styles.scannedCount}>{scannedFoods.length} food{scannedFoods.length !== 1 ? 's' : ''} in your database</div>
+              {scannedFoods.map(food => (
+                <div key={food.id} className={`${styles.scannedCard} ${expandedScanned === food.id ? styles.scannedCardExpanded : ''}`}>
+                  <div className={styles.scannedCardHeader} onClick={() => setExpandedScanned(expandedScanned === food.id ? null : food.id)}>
+                    <div className={styles.scannedCardInfo}>
+                      {food.imageUrl && <img src={food.imageUrl} alt="" className={styles.scannedImg} />}
+                      <div>
+                        <div className={styles.scannedName}>{food.name}</div>
+                        {food.brand && <div className={styles.scannedBrand}>{food.brand}</div>}
+                      </div>
+                    </div>
+                    <div className={styles.scannedMacrosPill}>
+                      <span><strong>{food.cal}</strong> cal</span>
+                      <span className={styles.proteinVal}>P {food.protein}g</span>
+                    </div>
+                  </div>
+                  {expandedScanned === food.id && (
+                    <div className={styles.scannedBody}>
+                      <div className={styles.scannedMacroGrid}>
+                        <div><span className={styles.scannedMacroLabel}>Serving</span><span className={styles.scannedMacroValue}>{food.servingSize}</span></div>
+                        <div><span className={styles.scannedMacroLabel}>Calories</span><span className={styles.scannedMacroValue}>{food.cal}</span></div>
+                        <div><span className={styles.scannedMacroLabel}>Protein</span><span className={`${styles.scannedMacroValue} ${styles.proteinVal}`}>{food.protein}g</span></div>
+                        <div><span className={styles.scannedMacroLabel}>Carbs</span><span className={styles.scannedMacroValue}>{food.carbs}g</span></div>
+                        <div><span className={styles.scannedMacroLabel}>Fat</span><span className={styles.scannedMacroValue}>{food.fat}g</span></div>
+                        <div><span className={styles.scannedMacroLabel}>Fiber</span><span className={styles.scannedMacroValue}>{food.fiber}g</span></div>
+                        <div><span className={styles.scannedMacroLabel}>Sugar</span><span className={styles.scannedMacroValue}>{food.sugar}g</span></div>
+                        <div><span className={styles.scannedMacroLabel}>Barcode</span><span className={styles.scannedMacroValue}>{food.barcode}</span></div>
+                      </div>
+                      <button className={styles.deletePresetBtn} onClick={() => deleteScannedFood(food.id)}>Remove from database</button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

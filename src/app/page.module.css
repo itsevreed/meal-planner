@@ -268,3 +268,36 @@
 .presetPickerItem:hover { background: var(--green-bg); border-color: var(--green); }
 .presetPickerName { font-size: 14px; font-weight: 500; }
 .presetPickerMacros { display: flex; gap: 8px; font-size: 12px; color: var(--text2); }
+
+/* ─── Section label sub ─── */
+.sectionLabelSub { font-weight: 400; color: var(--text3); font-size: 11px; }
+
+/* ═══ SCANNED FOODS ═══ */
+.scanInputSection { margin-bottom: 1.25rem; }
+.scanInputRow { display: flex; gap: 6px; margin-bottom: 8px; }
+.scanInputRow input { flex: 1; padding: 10px 12px; font-size: 16px; border: 0.5px solid var(--border2); border-radius: var(--radius); background: var(--bg); color: var(--text); min-width: 0; }
+.scanInputRow input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 2px rgba(45,122,79,0.1); }
+.scanBtn { padding: 10px 16px; font-size: 13px; font-weight: 600; background: var(--green); color: #fff; border: none; border-radius: var(--radius); min-height: 44px; display: flex; align-items: center; gap: 6px; white-space: nowrap; transition: opacity .15s; }
+.scanBtn:hover:not(:disabled) { opacity: .9; }
+.scanBtn:disabled { opacity: .5; cursor: not-allowed; }
+.scanError { font-size: 13px; color: #c97a2a; padding: 6px 0; }
+.scanHint { font-size: 11px; color: var(--text3); line-height: 1.5; }
+
+.scannedList { display: flex; flex-direction: column; gap: 6px; }
+.scannedCount { font-size: 12px; color: var(--text3); margin-bottom: 8px; }
+
+.scannedCard { border: 0.5px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg); }
+.scannedCardExpanded { border-color: var(--border2); }
+.scannedCardHeader { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; cursor: pointer; gap: 10px; min-height: 52px; transition: background .15s; }
+.scannedCardHeader:hover { background: var(--bg2); }
+.scannedCardInfo { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.scannedImg { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--bg2); }
+.scannedName { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scannedBrand { font-size: 11px; color: var(--text3); }
+.scannedMacrosPill { display: flex; gap: 8px; font-size: 11px; color: var(--text2); flex-shrink: 0; }
+.scannedMacrosPill strong { color: var(--text); }
+
+.scannedBody { padding: 0 12px 12px; }
+.scannedMacroGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+.scannedMacroLabel { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.3px; display: block; margin-bottom: 1px; }
+.scannedMacroValue { font-size: 14px; font-weight: 500; display: block; }

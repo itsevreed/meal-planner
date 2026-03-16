@@ -4,20 +4,30 @@ import { NextRequest, NextResponse } from 'next/server'
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
-  const { mealInput, mealType, person, remainingCals, targetProtein, dinnerMacros, exactLunchBudget, dislikes, lockedMealsCals } = await req.json()
+  const { mealInput, mealType, person, remainingCals, targetProtein, dinnerMacros, exactLunchBudget, dislikes, lockedMealsCals, scannedFoods } = await req.json()
 
   // dislikes: string[] of foods to absolutely avoid
-  // lockedMealsCals: number — total cals already locked for this person today (breakfast+lunch)
+  // lockedMealsCals: number — total cals already locked for this person today (breakfast+lunch+snack)
+  // scannedFoods: array of { name, brand, servingSize, cal, protein, carbs, fat } from barcode scans
 
   const dislikeWarning = dislikes && dislikes.length > 0
     ? `\n\nFOODS TO ABSOLUTELY AVOID — do NOT include any of these ingredients: ${dislikes.join(', ')}. If the user's input mentions a disliked food, suggest a substitute instead.`
     : ''
 
+  // Build scanned foods reference for accurate nutrition data
+  let scannedFoodsRef = ''
+  if (scannedFoods && scannedFoods.length > 0) {
+    const foodList = scannedFoods.map((f: any) =>
+      `- "${f.name}" (${f.brand}): ${f.cal} cal, ${f.protein}g protein, ${f.carbs}g carbs, ${f.fat}g fat per ${f.servingSize}`
+    ).join('\n')
+    scannedFoodsRef = `\n\nSCANNED FOODS DATABASE — if any ingredient matches one of these, use THESE EXACT nutrition values (they are from verified barcode data):\n${foodList}`
+  }
+
   let prompt = ''
 
   if (mealType === 'dinner') {
     prompt = `You are a precise nutritionist. The user is having this for dinner: "${mealInput}"
-${dislikeWarning}
+${dislikeWarning}${scannedFoodsRef}
 
 CRITICAL RULE: Use ONLY the ingredients the user mentioned in their input. Do NOT add extra ingredients, sauces, oils, sides, or garnishes unless the user explicitly listed them. If they say "beef, lettuce, and cheese", the portions list must contain ONLY beef, lettuce, and cheese — nothing else.
 
@@ -50,17 +60,21 @@ Respond ONLY with valid JSON, no markdown:
     } else if (lockedMealsCals !== undefined && lockedMealsCals > 0) {
       // There's a locked sibling meal — this meal gets whatever is left
       mealBudget = calTarget - lockedMealsCals
+    } else if (mealType === 'snack') {
+      // Snacks get ~15% of remaining budget
+      mealBudget = Math.round(calTarget * 0.15)
     } else {
+      // Breakfast ~37%, lunch ~48% of remaining (leaving room for snack)
       mealBudget = mealType === 'breakfast'
-        ? Math.round(calTarget * 0.42)
-        : Math.round(calTarget * 0.58)
+        ? Math.round(calTarget * 0.37)
+        : Math.round(calTarget * 0.48)
     }
 
     // Ensure budget is at least 150 cal
     mealBudget = Math.max(mealBudget, 150)
 
     prompt = `You are a precise nutritionist helping plan a ${mealType} meal. ${weightNote}
-${dislikeWarning}
+${dislikeWarning}${scannedFoodsRef}
 
 CRITICAL RULE: Use ONLY the ingredients the user mentioned in their input. Do NOT add extra ingredients, sauces, oils, sides, or garnishes unless the user explicitly listed them. If they say "eggs and turkey sausage", the portions list must contain ONLY eggs and turkey sausage — nothing else.
 

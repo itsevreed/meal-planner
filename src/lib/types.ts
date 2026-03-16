@@ -28,10 +28,12 @@ export interface DayPlan {
   his: {
     breakfast: PersonMeal
     lunch: PersonMeal
+    snack: PersonMeal
   }
   her: {
     breakfast: PersonMeal
     lunch: PersonMeal
+    snack: PersonMeal
   }
   dinner: PersonMeal
 }
@@ -57,7 +59,6 @@ export interface GroceryItem {
   category: string
 }
 
-// Meal Ideas types
 export interface MealIdea {
   name: string
   description: string
@@ -74,11 +75,10 @@ export interface MealIdeasResponse {
   dinner: MealIdea[]
 }
 
-// Preset meals
 export interface PresetMeal {
   id: string
   name: string
-  mealType: 'breakfast' | 'lunch' | 'dinner'
+  mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack'
   who: 'his' | 'her' | 'shared'
   cal: number
   protein: number
@@ -88,11 +88,26 @@ export interface PresetMeal {
   createdAt: string
 }
 
-// Weight tracking
 export interface WeightEntry {
   id: string
   person: 'his' | 'her'
   weight: number
   date: string
+  createdAt: string
+}
+
+export interface ScannedFood {
+  id: string
+  barcode: string
+  name: string
+  brand: string
+  servingSize: string
+  cal: number
+  protein: number
+  carbs: number
+  fat: number
+  fiber: number
+  sugar: number
+  imageUrl: string
   createdAt: string
 }
