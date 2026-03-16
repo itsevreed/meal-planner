@@ -1,17 +1,39 @@
 export interface MacroMeal {
   name: string
+  description?: string
+  cal: number
+  protein: number
+  carbs: number
+  fat: number
+  portions?: PortionItem[]
+}
+
+export interface PortionItem {
+  ingredient: string
+  amount: string
   cal: number
   protein: number
   carbs: number
   fat: number
 }
 
+export interface PersonMeal {
+  input: string          // what the user typed
+  meal: MacroMeal | null // calculated result
+}
+
 export interface DayPlan {
   day: string
   theme: string
-  his: { breakfast: MacroMeal; lunch: MacroMeal }
-  her: { breakfast: MacroMeal; lunch: MacroMeal }
-  dinner: MacroMeal
+  his: {
+    breakfast: PersonMeal
+    lunch: PersonMeal
+  }
+  her: {
+    breakfast: PersonMeal
+    lunch: PersonMeal
+  }
+  dinner: PersonMeal     // shared, manual input
 }
 
 export interface MealPlan {
@@ -27,4 +49,10 @@ export interface Preferences {
 export interface Dislikes {
   his: string[]
   her: string[]
+}
+
+export interface GroceryItem {
+  name: string
+  amount: string
+  category: string
 }

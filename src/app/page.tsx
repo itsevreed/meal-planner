@@ -1,162 +1,179 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { MealPlan, Preferences, Dislikes, DayPlan, MacroMeal } from '@/lib/types'
+import type { MealPlan, DayPlan, PersonMeal, MacroMeal, Dislikes, GroceryItem } from '@/lib/types'
 import styles from './page.module.css'
 
 const DAYS_META = [
-  { key: 'mon', name: 'Monday', theme: 'Breakfast theme' },
-  { key: 'tue', name: 'Tuesday', theme: 'Taco Tuesday' },
-  { key: 'wed', name: 'Wednesday', theme: 'Asian Wednesday' },
-  { key: 'thu', name: 'Thursday', theme: 'Steak & Potato' },
-  { key: 'fri', name: 'Friday', theme: 'Salmon Friday' },
-  { key: 'sat', name: 'Saturday', theme: 'Open choice' },
-  { key: 'sun', name: 'Sunday', theme: 'Open choice' },
+  { name: 'Monday',    theme: 'Breakfast theme' },
+  { name: 'Tuesday',   theme: 'Taco Tuesday' },
+  { name: 'Wednesday', theme: 'Asian Wednesday' },
+  { name: 'Thursday',  theme: 'Steak & Potato' },
+  { name: 'Friday',    theme: 'Salmon Friday' },
+  { name: 'Saturday',  theme: 'Open choice' },
+  { name: 'Sunday',    theme: 'Open choice' },
 ]
 
-type Tab = 'plan' | 'prefs' | 'dislikes'
+const HIM  = { label: 'Him',  calTarget: 1820, proteinTarget: 160, breakfastCal: 420, lunchCal: 550 }
+const HER  = { label: 'Her',  calTarget: 1490, proteinTarget: 130, breakfastCal: 330, lunchCal: 440 }
+
+function emptyPersonMeal(): PersonMeal { return { input: '', meal: null } }
+
+function emptyDay(meta: typeof DAYS_META[0]): DayPlan {
+  return {
+    day: meta.name,
+    theme: meta.theme,
+    his: { breakfast: emptyPersonMeal(), lunch: emptyPersonMeal() },
+    her: { breakfast: emptyPersonMeal(), lunch: emptyPersonMeal() },
+    dinner: emptyPersonMeal(),
+  }
+}
+
+type Tab = 'plan' | 'dislikes' | 'grocery'
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>('plan')
-  const [plan, setPlan] = useState<MealPlan | null>(null)
-  const [prefs, setPrefs] = useState<Preferences>({ proteins: '', cuisines: '', notes: '' })
+  const [plan, setPlan] = useState<MealPlan>(() => ({ days: DAYS_META.map(emptyDay) }))
   const [dislikes, setDislikes] = useState<Dislikes>({ his: [], her: [] })
-  const [generating, setGenerating] = useState(false)
-  const [swapping, setSwapping] = useState<string | null>(null)
   const [hisInput, setHisInput] = useState('')
   const [herInput, setHerInput] = useState('')
   const [loading, setLoading] = useState(true)
+  const [calculating, setCalculating] = useState<string | null>(null)
+  const [grocery, setGrocery] = useState<GroceryItem[] | null>(null)
+  const [groceryLoading, setGroceryLoading] = useState(false)
+  const [expandedDay, setExpandedDay] = useState<number>(0)
 
-  // Load all data from Supabase on mount
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      // Load dislikes
       const { data: dislikesData } = await supabase.from('dislikes').select('*')
       if (dislikesData) {
-        const his = dislikesData.filter((d) => d.person === 'his').map((d) => d.item)
-        const her = dislikesData.filter((d) => d.person === 'her').map((d) => d.item)
-        setDislikes({ his, her })
+        setDislikes({
+          his: dislikesData.filter(d => d.person === 'his').map(d => d.item),
+          her: dislikesData.filter(d => d.person === 'her').map(d => d.item),
+        })
       }
-
-      // Load preferences
-      const { data: prefsData } = await supabase.from('preferences').select('*').limit(1).single()
-      if (prefsData) {
-        setPrefs({ proteins: prefsData.proteins, cuisines: prefsData.cuisines, notes: prefsData.notes })
-      }
-
-      // Load meal plan
       const { data: planData } = await supabase
-        .from('meal_plan')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-      if (planData) {
-        setPlan(planData.plan as MealPlan)
-      }
-    } catch (e) {
-      // No data yet, fresh start
-    }
+        .from('meal_plan').select('*').order('created_at', { ascending: false }).limit(1).single()
+      if (planData?.plan) setPlan(planData.plan as MealPlan)
+    } catch {}
     setLoading(false)
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Save preferences to Supabase
-  const savePrefs = async (newPrefs: Preferences) => {
-    const { data: existing } = await supabase.from('preferences').select('id').limit(1).single()
-    if (existing) {
-      await supabase.from('preferences').update(newPrefs).eq('id', existing.id)
-    } else {
-      await supabase.from('preferences').insert(newPrefs)
+  const savePlan = async (newPlan: MealPlan) => {
+    try {
+      await supabase.from('meal_plan').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      await supabase.from('meal_plan').insert({ plan: newPlan })
+    } catch {}
+  }
+
+  const updateDay = (di: number, updater: (day: DayPlan) => DayPlan) => {
+    setPlan(prev => {
+      const days = [...prev.days]
+      days[di] = updater(days[di])
+      const next = { days }
+      savePlan(next)
+      return next
+    })
+  }
+
+  const calculateMeal = async (
+    di: number,
+    who: 'his' | 'her' | 'shared',
+    mealType: 'breakfast' | 'lunch' | 'dinner',
+    input: string
+  ) => {
+    if (!input.trim()) return
+    const key = `${di}-${who}-${mealType}`
+    setCalculating(key)
+
+    const day = plan.days[di]
+    const dinnerMacros = day.dinner.meal
+    const person = who === 'shared' ? 'shared' : who
+    const profile = who === 'his' ? HIM : HER
+    const dinnerCal = dinnerMacros?.cal || 0
+    const remainingCals = profile.calTarget - dinnerCal
+
+    try {
+      const res = await fetch('/api/calculate-meal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mealInput: input, mealType, person, remainingCals, targetProtein: profile.proteinTarget, dinnerMacros }),
+      })
+      const { meal } = await res.json()
+
+      updateDay(di, (d) => {
+        if (mealType === 'dinner') {
+          return { ...d, dinner: { input, meal } }
+        }
+        return {
+          ...d,
+          [who]: {
+            ...(d as any)[who],
+            [mealType]: { input, meal },
+          },
+        }
+      })
+    } catch {
+      alert('Failed to calculate. Please try again.')
     }
+    setCalculating(null)
+  }
+
+  const generateGrocery = async () => {
+    setGroceryLoading(true)
+    setTab('grocery')
+    try {
+      const res = await fetch('/api/grocery-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      })
+      const { items } = await res.json()
+      setGrocery(items)
+    } catch { alert('Failed to generate grocery list.') }
+    setGroceryLoading(false)
   }
 
   const addDislike = async (who: 'his' | 'her', item: string) => {
     const trimmed = item.trim().toLowerCase()
     if (!trimmed || dislikes[who].includes(trimmed)) return
     await supabase.from('dislikes').insert({ person: who, item: trimmed })
-    setDislikes((prev) => ({ ...prev, [who]: [...prev[who], trimmed] }))
+    setDislikes(prev => ({ ...prev, [who]: [...prev[who], trimmed] }))
   }
 
   const removeDislike = async (who: 'his' | 'her', item: string) => {
     await supabase.from('dislikes').delete().eq('person', who).eq('item', item)
-    setDislikes((prev) => ({ ...prev, [who]: prev[who].filter((x) => x !== item) }))
+    setDislikes(prev => ({ ...prev, [who]: prev[who].filter(x => x !== item) }))
   }
 
-  const generateWeek = async () => {
-    setGenerating(true)
-    setTab('plan')
-    try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferences: prefs, dislikes }),
-      })
-      const { plan: newPlan } = await res.json()
-
-      // Save to Supabase — delete old, insert new
-      await supabase.from('meal_plan').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-      await supabase.from('meal_plan').insert({ plan: newPlan })
-      setPlan(newPlan)
-    } catch (e) {
-      alert('Something went wrong generating the plan. Please try again.')
-    }
-    setGenerating(false)
+  // Totals for a person on a given day
+  const getDayTotals = (day: DayPlan, who: 'his' | 'her') => {
+    const meals = [day[who].breakfast.meal, day[who].lunch.meal, day.dinner.meal]
+    return meals.reduce((acc, m) => ({
+      cal: acc.cal + (m?.cal || 0),
+      protein: acc.protein + (m?.protein || 0),
+      carbs: acc.carbs + (m?.carbs || 0),
+      fat: acc.fat + (m?.fat || 0),
+    }), { cal: 0, protein: 0, carbs: 0, fat: 0 })
   }
 
-  const swapMeal = async (di: number, who: string, mealType: string) => {
-    if (!plan) return
-    const key = `${who}-${mealType}-${di}`
-    setSwapping(key)
-    const day = plan.days[di]
-    let currentMeal = ''
-    if (who === 'shared') currentMeal = day.dinner.name
-    else currentMeal = (day as any)[who][mealType].name
+  const GROCERY_CATEGORIES = ['Proteins', 'Produce', 'Dairy & Eggs', 'Pantry & Dry Goods', 'Condiments & Sauces', 'Other']
 
-    try {
-      const res = await fetch('/api/swap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ day, who, mealType, currentMeal, dislikes }),
-      })
-      const { meal } = await res.json()
-      const newPlan = { ...plan, days: [...plan.days] }
-      if (who === 'shared') {
-        newPlan.days[di] = { ...newPlan.days[di], dinner: meal }
-      } else {
-        newPlan.days[di] = {
-          ...newPlan.days[di],
-          [who]: { ...(newPlan.days[di] as any)[who], [mealType]: meal },
-        }
-      }
-      // Update in Supabase
-      const { data: existing } = await supabase.from('meal_plan').select('id').limit(1).single()
-      if (existing) await supabase.from('meal_plan').update({ plan: newPlan }).eq('id', existing.id)
-      setPlan(newPlan)
-    } catch (e) {
-      alert('Failed to swap meal. Please try again.')
-    }
-    setSwapping(null)
-  }
+  if (loading) return <div className={styles.loadingScreen}><div className={styles.spinner} /><p>Loading your meal planner...</p></div>
 
   return (
     <div className={styles.app}>
       <div className={styles.header}>
         <h1>Meal planner</h1>
-        <p>Personalized weekly meals for two</p>
+        <p>High-protein weekly meals for two</p>
       </div>
 
       <div className={styles.tabs}>
-        {(['plan', 'prefs', 'dislikes'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            className={`${styles.tab} ${tab === t ? styles.active : ''}`}
-            onClick={() => setTab(t)}
-          >
-            {t === 'plan' ? 'Meal plan' : t === 'prefs' ? 'Preferences' : 'Dislikes'}
-          </button>
+        {([['plan','Meal plan'],['dislikes','Dislikes'],['grocery','Grocery list']] as [Tab,string][]).map(([t,label]) => (
+          <button key={t} className={`${styles.tab} ${tab===t?styles.active:''}`} onClick={() => setTab(t)}>{label}</button>
         ))}
       </div>
 
@@ -165,11 +182,10 @@ export default function Home() {
         <div>
           <div className={styles.statsBar}>
             {[
-              { label: "His daily target", value: "1,820", sub: "cal · 5'9\" 215 lbs" },
-              { label: "Her daily target", value: "1,490", sub: "cal · 5'7\" 175 lbs" },
-              { label: "Shared dinner", value: "~600", sub: "cal · midpoint" },
-              { label: "Weekly deficit", value: "~3,500", sub: "cal each · ~1 lb/wk" },
-            ].map((s) => (
+              { label: "His target", value: "1,820 cal", sub: "160g protein · 5'9\" 215 lbs" },
+              { label: "Her target", value: "1,490 cal", sub: "130g protein · 5'7\" 175 lbs" },
+              { label: "Goal", value: "~1 lb/wk", sub: "500 cal deficit each" },
+            ].map(s => (
               <div key={s.label} className={styles.statCard}>
                 <div className={styles.statLabel}>{s.label}</div>
                 <div className={styles.statValue}>{s.value}</div>
@@ -178,53 +194,114 @@ export default function Home() {
             ))}
           </div>
 
-          <button className={styles.generateBtn} onClick={generateWeek} disabled={generating}>
-            {generating ? 'Generating your plan...' : plan ? 'Regenerate meal plan' : 'Generate this week\'s meal plan'}
-          </button>
+          <div className={styles.howTo}>
+            <strong>How it works:</strong> For each day, enter your dinner first → then breakfast and lunch. Claude calculates exact portions and macros to hit your targets.
+          </div>
 
-          {loading ? (
-            <div className={styles.emptyState}><p>Loading...</p></div>
-          ) : !plan ? (
-            <div className={styles.emptyState}>
-              <div className={styles.emptyIcon}>🍽</div>
-              <p>Hit "Generate" above to create your personalized meal plan.<br />Add preferences and dislikes first for better results.</p>
-            </div>
-          ) : (
-            <div className={styles.dayGrid}>
-              {plan.days.map((day, di) => (
-                <DayCard
-                  key={day.day}
-                  day={day}
-                  di={di}
-                  swapping={swapping}
-                  onSwap={swapMeal}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+          <div className={styles.dayGrid}>
+            {plan.days.map((day, di) => {
+              const hisTotals = getDayTotals(day, 'his')
+              const herTotals = getDayTotals(day, 'her')
+              const isOpen = expandedDay === di
 
-      {/* PREFS TAB */}
-      {tab === 'prefs' && (
-        <div className={styles.prefsPanel}>
-          {[
-            { key: 'proteins', label: 'Proteins & ingredients on hand', placeholder: 'e.g. chicken breast, ground turkey, salmon fillets, eggs, Greek yogurt...' },
-            { key: 'cuisines', label: 'Cuisine & flavor preferences', placeholder: 'e.g. Mediterranean flavors, spicy foods this week, lighter lunches...' },
-            { key: 'notes', label: 'Dietary notes', placeholder: 'e.g. quick breakfasts under 10 min, no cooking Monday, high protein lunches...' },
-          ].map((field) => (
-            <div key={field.key} className={styles.prefsSection}>
-              <h2>{field.label}</h2>
-              <textarea
-                value={(prefs as any)[field.key]}
-                placeholder={field.placeholder}
-                onChange={(e) => setPrefs((p) => ({ ...p, [field.key]: e.target.value }))}
-                onBlur={() => savePrefs(prefs)}
-              />
-            </div>
-          ))}
-          <button className={styles.generateBtn} onClick={() => { savePrefs(prefs); generateWeek() }}>
-            Save & generate plan →
+              return (
+                <div key={day.day} className={styles.dayCard}>
+                  <button className={styles.dayHeader} onClick={() => setExpandedDay(isOpen ? -1 : di)}>
+                    <div className={styles.dayHeaderLeft}>
+                      <span className={styles.dayName}>{day.day}</span>
+                      <span className={styles.dayTheme}>{day.theme}</span>
+                    </div>
+                    <div className={styles.dayHeaderRight}>
+                      {hisTotals.cal > 0 && (
+                        <span className={styles.dayTotalPill}>
+                          Him {hisTotals.cal} cal · {hisTotals.protein}g P
+                        </span>
+                      )}
+                      {herTotals.cal > 0 && (
+                        <span className={styles.dayTotalPill}>
+                          Her {herTotals.cal} cal · {herTotals.protein}g P
+                        </span>
+                      )}
+                      <span className={styles.chevron}>{isOpen ? '▲' : '▼'}</span>
+                    </div>
+                  </button>
+
+                  {isOpen && (
+                    <div className={styles.dayBody}>
+                      {/* DINNER — full width, enter first */}
+                      <div className={styles.dinnerSection}>
+                        <div className={styles.sectionLabel}>Shared dinner</div>
+                        <MealInput
+                          placeholder="e.g. sirloin steaks and baked potatoes from Costco"
+                          value={day.dinner.input}
+                          meal={day.dinner.meal}
+                          calcKey={`${di}-shared-dinner`}
+                          calculating={calculating}
+                          onSubmit={(input) => calculateMeal(di, 'shared', 'dinner', input)}
+                          onChange={(v) => updateDay(di, d => ({ ...d, dinner: { ...d.dinner, input: v } }))}
+                        />
+                      </div>
+
+                      {/* BREAKFAST + LUNCH side by side per person */}
+                      <div className={styles.personGrid}>
+                        {(['his','her'] as const).map(who => {
+                          const profile = who === 'his' ? HIM : HER
+                          const dinnerCal = day.dinner.meal?.cal || 0
+                          const remaining = profile.calTarget - dinnerCal
+                          const totals = getDayTotals(day, who)
+                          return (
+                            <div key={who} className={styles.personCol}>
+                              <div className={styles.personHeader}>
+                                <span className={styles.personLabel}>{profile.label}</span>
+                                {dinnerCal > 0 && (
+                                  <span className={styles.remainingBadge}>
+                                    {remaining} cal left for B+L
+                                  </span>
+                                )}
+                              </div>
+
+                              {(['breakfast','lunch'] as const).map(mt => (
+                                <div key={mt} className={styles.mealSection}>
+                                  <div className={styles.mealTypeLabel}>{mt.charAt(0).toUpperCase()+mt.slice(1)}</div>
+                                  <MealInput
+                                    placeholder={mt === 'breakfast'
+                                      ? 'e.g. scrambled eggs with turkey and avocado'
+                                      : 'e.g. taco salad with ground beef, lettuce, cheese, sour cream'
+                                    }
+                                    value={day[who][mt].input}
+                                    meal={day[who][mt].meal}
+                                    calcKey={`${di}-${who}-${mt}`}
+                                    calculating={calculating}
+                                    onSubmit={(input) => calculateMeal(di, who, mt, input)}
+                                    onChange={(v) => updateDay(di, d => ({
+                                      ...d,
+                                      [who]: { ...d[who], [mt]: { ...d[who][mt], input: v } }
+                                    }))}
+                                  />
+                                </div>
+                              ))}
+
+                              {totals.cal > 0 && (
+                                <div className={styles.personTotals}>
+                                  <span>Total: <strong>{totals.cal} cal</strong></span>
+                                  <span>Protein: <strong className={totals.protein >= profile.proteinTarget ? styles.proteinGood : styles.proteinLow}>{totals.protein}g / {profile.proteinTarget}g</strong></span>
+                                  <span>Carbs: <strong>{totals.carbs}g</strong></span>
+                                  <span>Fat: <strong>{totals.fat}g</strong></span>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <button className={styles.groceryBtn} onClick={generateGrocery}>
+            Generate grocery list →
           </button>
         </div>
       )}
@@ -232,7 +309,7 @@ export default function Home() {
       {/* DISLIKES TAB */}
       {tab === 'dislikes' && (
         <div className={styles.dislikesGrid}>
-          {(['his', 'her'] as const).map((who) => (
+          {(['his','her'] as const).map(who => (
             <div key={who} className={styles.dislikeCol}>
               <h2>{who === 'his' ? 'His dislikes' : 'Her dislikes'}</h2>
               <div className={styles.dislikeInputRow}>
@@ -240,8 +317,8 @@ export default function Home() {
                   type="text"
                   value={who === 'his' ? hisInput : herInput}
                   placeholder="Add a food..."
-                  onChange={(e) => who === 'his' ? setHisInput(e.target.value) : setHerInput(e.target.value)}
-                  onKeyDown={(e) => {
+                  onChange={e => who === 'his' ? setHisInput(e.target.value) : setHerInput(e.target.value)}
+                  onKeyDown={e => {
                     if (e.key === 'Enter') {
                       const val = who === 'his' ? hisInput : herInput
                       addDislike(who, val)
@@ -249,107 +326,137 @@ export default function Home() {
                     }
                   }}
                 />
-                <button
-                  className={styles.addBtn}
-                  onClick={() => {
-                    const val = who === 'his' ? hisInput : herInput
-                    addDislike(who, val)
-                    who === 'his' ? setHisInput('') : setHerInput('')
-                  }}
-                >
-                  Add
-                </button>
+                <button className={styles.addBtn} onClick={() => {
+                  const val = who === 'his' ? hisInput : herInput
+                  addDislike(who, val)
+                  who === 'his' ? setHisInput('') : setHerInput('')
+                }}>Add</button>
               </div>
               <div className={styles.dislikeList}>
-                {dislikes[who].length === 0 ? (
-                  <span className={styles.noDislikes}>None added yet</span>
-                ) : (
-                  dislikes[who].map((item) => (
+                {dislikes[who].length === 0
+                  ? <span className={styles.noDislikes}>None added yet</span>
+                  : dislikes[who].map(item => (
                     <span key={item} className={styles.dislikeTag}>
                       {item}
                       <button onClick={() => removeDislike(who, item)}>&times;</button>
                     </span>
                   ))
-                )}
+                }
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* GROCERY TAB */}
+      {tab === 'grocery' && (
+        <div>
+          <div className={styles.groceryHeader}>
+            <p>Based on your current week's meal plan. Update your meals first, then regenerate.</p>
+            <button className={styles.regenBtn} onClick={generateGrocery} disabled={groceryLoading}>
+              {groceryLoading ? 'Generating...' : 'Regenerate list'}
+            </button>
+          </div>
+
+          {groceryLoading && (
+            <div className={styles.loadingState}>
+              <div className={styles.spinner} />
+              <p>Building your grocery list...</p>
+            </div>
+          )}
+
+          {!groceryLoading && !grocery && (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyIcon}>🛒</div>
+              <p>Fill in your meals for the week, then click "Generate grocery list" on the plan tab.</p>
+            </div>
+          )}
+
+          {!groceryLoading && grocery && (
+            <div className={styles.groceryList}>
+              {GROCERY_CATEGORIES.map(cat => {
+                const items = grocery.filter(i => i.category === cat)
+                if (!items.length) return null
+                return (
+                  <div key={cat} className={styles.groceryCategory}>
+                    <h3>{cat}</h3>
+                    <div className={styles.groceryItems}>
+                      {items.map((item, i) => (
+                        <div key={i} className={styles.groceryItem}>
+                          <span className={styles.groceryName}>{item.name}</span>
+                          <span className={styles.groceryAmount}>{item.amount}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function MealCard({ meal, swapKey, swapping, onSwap }: {
-  meal: MacroMeal
-  swapKey: string
-  swapping: string | null
-  onSwap: (di: number, who: string, mealType: string) => void
+// MealInput component — text input + calculate button + result display
+function MealInput({ placeholder, value, meal, calcKey, calculating, onSubmit, onChange }: {
+  placeholder: string
+  value: string
+  meal: MacroMeal | null
+  calcKey: string
+  calculating: string | null
+  onSubmit: (input: string) => void
+  onChange: (v: string) => void
 }) {
-  const [di, who, mt] = swapKey.split('-')
-  const isLoading = swapping === swapKey
-  return (
-    <div className={`${styles.mealCard} ${isLoading ? styles.mealLoading : ''}`}>
-      <div className={styles.mealName}>{isLoading ? 'Finding a new meal...' : meal.name}</div>
-      <div className={styles.mealMacros}>
-        <span><strong>{meal.cal}</strong> cal</span>
-        <span>P <strong>{meal.protein}g</strong></span>
-        <span>C <strong>{meal.carbs}g</strong></span>
-        <span>F <strong>{meal.fat}g</strong></span>
-      </div>
-      {!isLoading && (
-        <button className={styles.swapBtn} onClick={() => onSwap(parseInt(di), who, mt)} title="Swap this meal">↺</button>
-      )}
-    </div>
-  )
-}
-
-function DayCard({ day, di, swapping, onSwap }: {
-  day: DayPlan
-  di: number
-  swapping: string | null
-  onSwap: (di: number, who: string, mealType: string) => void
-}) {
-  const hisTot = day.his.breakfast.cal + day.his.lunch.cal + day.dinner.cal
-  const herTot = day.her.breakfast.cal + day.her.lunch.cal + day.dinner.cal
+  const isCalc = calculating === calcKey
 
   return (
-    <div className={styles.dayCard}>
-      <div className={styles.dayHeader}>
-        <span className={styles.dayName}>{day.day}</span>
-        <span className={styles.dayTheme}>{day.theme}</span>
-      </div>
-      <div className={styles.mealsGrid}>
-        {(['his', 'her'] as const).map((who) => (
-          <div key={who} className={styles.personCol}>
-            <div className={styles.personLabel}>{who === 'his' ? 'His meals' : 'Her meals'}</div>
-            {(['breakfast', 'lunch'] as const).map((mt) => (
-              <div key={mt} className={styles.mealRow}>
-                <div className={styles.mealType}>{mt.charAt(0).toUpperCase() + mt.slice(1)}</div>
-                <MealCard
-                  meal={day[who][mt]}
-                  swapKey={`${di}-${who}-${mt}`}
-                  swapping={swapping}
-                  onSwap={onSwap}
-                />
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-      <div className={styles.dinnerRow}>
-        <div className={styles.dinnerLabel}>Shared dinner</div>
-        <MealCard
-          meal={day.dinner}
-          swapKey={`${di}-shared-dinner`}
-          swapping={swapping}
-          onSwap={onSwap}
+    <div className={styles.mealInput}>
+      <div className={styles.mealInputRow}>
+        <input
+          type="text"
+          placeholder={placeholder}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && value.trim()) onSubmit(value) }}
+          disabled={isCalc}
         />
+        <button
+          className={styles.calcBtn}
+          onClick={() => value.trim() && onSubmit(value)}
+          disabled={isCalc || !value.trim()}
+        >
+          {isCalc ? '...' : meal ? '↺' : '→'}
+        </button>
       </div>
-      <div className={styles.dailyTotals}>
-        <span>His total: <strong>{hisTot} cal</strong></span>
-        <span>Her total: <strong>{herTot} cal</strong></span>
-      </div>
+
+      {isCalc && <div className={styles.calcLoading}>Calculating macros...</div>}
+
+      {!isCalc && meal && (
+        <div className={styles.mealResult}>
+          <div className={styles.mealResultName}>{meal.name}</div>
+          {meal.description && <div className={styles.mealResultDesc}>{meal.description}</div>}
+          <div className={styles.mealResultMacros}>
+            <span><strong>{meal.cal}</strong> cal</span>
+            <span>P <strong className={styles.proteinVal}>{meal.protein}g</strong></span>
+            <span>C <strong>{meal.carbs}g</strong></span>
+            <span>F <strong>{meal.fat}g</strong></span>
+          </div>
+          {meal.portions && meal.portions.length > 0 && (
+            <div className={styles.portionList}>
+              {meal.portions.map((p, i) => (
+                <div key={i} className={styles.portionItem}>
+                  <span className={styles.portionIngredient}>{p.ingredient}</span>
+                  <span className={styles.portionAmount}>{p.amount}</span>
+                  <span className={styles.portionCal}>{p.cal} cal</span>
+                  <span className={styles.portionProtein}>{p.protein}g P</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

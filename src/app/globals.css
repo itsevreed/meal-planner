@@ -1,8 +1,4 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   --bg: #ffffff;
@@ -16,6 +12,8 @@
   --radius: 8px;
   --radius-lg: 12px;
   --accent: #1a1a18;
+  --green: #2d7a4f;
+  --green-bg: #edf7f1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -29,6 +27,8 @@
     --text2: #9e9e99;
     --text3: #6b6b66;
     --accent: #e8e8e4;
+    --green: #5dbf8a;
+    --green-bg: #1a2e22;
   }
 }
 
