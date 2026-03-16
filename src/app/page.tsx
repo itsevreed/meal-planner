@@ -137,7 +137,7 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
   }
 
   // Preset picker
-  const [presetPicker, setPresetPicker] = useState<{ di: number; mealType: 'breakfast' | 'lunch' | 'dinner' } | null>(null)
+  const [presetPicker, setPresetPicker] = useState<{ di: number; mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack' } | null>(null)
 
   const getMyDislikes = () => dislikes[personKey]
   const getAllDislikes = () => [...dislikes.his, ...dislikes.her]
@@ -247,7 +247,7 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
   }
 
   // ── Recalculate portion ──
-  const recalculatePortions = async (di: number, mealType: 'breakfast' | 'lunch' | 'dinner', portionIndex: number, newAmount: string) => {
+  const recalculatePortions = async (di: number, mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack', portionIndex: number, newAmount: string) => {
     const who = mealType === 'dinner' ? 'shared' : personKey
     const day = plan.days[di]
     const pm: PersonMeal = mealType === 'dinner' ? day.dinner : day[personKey][mealType]
@@ -268,7 +268,7 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
   }
 
   // ── Delete ingredient ──
-  const deleteIngredient = (di: number, mealType: 'breakfast' | 'lunch' | 'dinner', portionIndex: number) => {
+  const deleteIngredient = (di: number, mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack', portionIndex: number) => {
     updateDay(di, d => {
       const pm: PersonMeal = mealType === 'dinner' ? d.dinner : d[personKey][mealType]
       if (!pm.meal?.portions) return d
@@ -319,13 +319,13 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
   }
 
   // ── Presets ──
-  const saveAsPreset = async (meal: MacroMeal, mealType: 'breakfast' | 'lunch' | 'dinner') => {
+  const saveAsPreset = async (meal: MacroMeal, mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack') => {
     const who = mealType === 'dinner' ? 'shared' : personKey
     const { data } = await supabase.from('preset_meals').insert({ name: meal.name, meal_type: mealType, who, cal: meal.cal, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, portions: meal.portions || [] }).select().single()
     if (data) setPresets(prev => [{ id: data.id, name: data.name, mealType: data.meal_type, who: data.who, cal: data.cal, protein: data.protein, carbs: data.carbs, fat: data.fat, portions: data.portions || [], createdAt: data.created_at }, ...prev])
   }
   const deletePreset = async (id: string) => { await supabase.from('preset_meals').delete().eq('id', id); setPresets(prev => prev.filter(p => p.id !== id)) }
-  const applyPreset = (preset: PresetMeal, di: number, mealType: 'breakfast' | 'lunch' | 'dinner') => {
+  const applyPreset = (preset: PresetMeal, di: number, mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack') => {
     const meal: MacroMeal = { name: preset.name, cal: preset.cal, protein: preset.protein, carbs: preset.carbs, fat: preset.fat, portions: preset.portions }
     updateDay(di, d => {
       if (mealType === 'dinner') return { ...d, dinner: { input: preset.name, meal } }
@@ -558,7 +558,7 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
                             onSavePreset={day[personKey].snack.meal ? () => saveAsPreset(day[personKey].snack.meal!, 'snack') : undefined}
                             onCopy={day[personKey].snack.meal ? () => setCopyTarget({ meal: day[personKey].snack, who: personKey, mealType: 'snack' }) : undefined}
                           />
-                          <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ di, mealType: 'snack' as any })}>⭐</button>
+                          <button className={styles.presetPickerBtn} onClick={() => setPresetPicker({ di, mealType: 'snack' })}>⭐</button>
                         </div>
                       </div>
 
@@ -642,12 +642,12 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
           <div className={styles.sectionIntro}><h2>Saved Presets</h2><p>Click to expand ingredients. Available to both users.</p></div>
           {presets.length === 0 ? <div className={styles.emptyState}><div className={styles.emptyIcon}>⭐</div><p>No presets yet. Save meals from the Plan tab.</p></div> : (
             <div className={styles.presetsList}>
-              {(['breakfast', 'lunch', 'dinner'] as const).map(mt => {
+              {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map(mt => {
                 const items = presets.filter(p => p.mealType === mt)
                 if (!items.length) return null
                 return (
                   <div key={mt} className={styles.presetCategory}>
-                    <h3>{mt === 'breakfast' ? '🌅' : mt === 'lunch' ? '☀️' : '🌙'} {mt.charAt(0).toUpperCase() + mt.slice(1)}</h3>
+                    <h3>{mt === 'breakfast' ? '🌅' : mt === 'lunch' ? '☀️' : mt === 'snack' ? '🍎' : '🌙'} {mt.charAt(0).toUpperCase() + mt.slice(1)}</h3>
                     {items.map(p => (
                       <div key={p.id} className={`${styles.presetCard} ${expandedPreset === p.id ? styles.presetCardExpanded : ''}`}>
                         <div className={styles.presetCardHeader} onClick={() => setExpandedPreset(expandedPreset === p.id ? null : p.id)}>
