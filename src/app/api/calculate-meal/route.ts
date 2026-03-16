@@ -6,13 +6,6 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 export async function POST(req: NextRequest) {
   const { mealInput, mealType, person, remainingCals, targetProtein, dinnerMacros } = await req.json()
 
-  // person: 'his' | 'her' | 'shared'
-  // mealType: 'breakfast' | 'lunch' | 'dinner'
-  // remainingCals: calories left after dinner for this person
-  // targetProtein: daily protein target in grams
-  // dinnerMacros: { cal, protein } for context
-  // mealInput: free text description of the meal
-
   let prompt = ''
 
   if (mealType === 'dinner') {

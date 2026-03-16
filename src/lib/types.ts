@@ -56,3 +56,20 @@ export interface GroceryItem {
   amount: string
   category: string
 }
+
+// Meal Ideas types
+export interface MealIdea {
+  name: string
+  description: string
+  cal: number
+  protein: number
+  carbs: number
+  fat: number
+  portions: PortionItem[]
+}
+
+export interface MealIdeasResponse {
+  breakfast: MealIdea[]
+  lunch: MealIdea[]
+  dinner: MealIdea[]
+}

@@ -6,7 +6,6 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 export async function POST(req: NextRequest) {
   const { plan } = await req.json()
 
-  // Build a summary of all meals
   const mealSummary: string[] = []
   for (const day of plan.days) {
     mealSummary.push(`${day.day}:`)
