@@ -552,45 +552,82 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
 
           {/* Live camera scanner */}
           <button className={s.camBtn} onClick={() => {
-            // Open live camera scanner
             const vid = document.createElement('video')
             vid.setAttribute('autoplay', ''); vid.setAttribute('playsinline', '')
             const overlay = document.createElement('div')
             overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;'
             const closeBtn = document.createElement('button')
-            closeBtn.textContent = '✕ Close'; closeBtn.style.cssText = 'position:absolute;top:20px;right:20px;padding:12px 20px;font-size:16px;background:#fff;border:none;border-radius:8px;cursor:pointer;z-index:10;'
-            const status = document.createElement('div')
-            status.textContent = 'Point camera at barcode...'; status.style.cssText = 'position:absolute;bottom:40px;color:#fff;font-size:16px;font-weight:600;'
-            vid.style.cssText = 'width:100%;max-height:70vh;object-fit:cover;border-radius:12px;'
-            overlay.appendChild(closeBtn); overlay.appendChild(vid); overlay.appendChild(status)
+            closeBtn.textContent = '✕ Close'; closeBtn.style.cssText = 'position:absolute;top:env(safe-area-inset-top,20px);right:20px;padding:12px 20px;font-size:16px;background:#fff;border:none;border-radius:8px;cursor:pointer;z-index:10;margin-top:20px;'
+            const statusEl = document.createElement('div')
+            statusEl.textContent = 'Point camera at barcode...'; statusEl.style.cssText = 'position:absolute;bottom:calc(40px + env(safe-area-inset-bottom,0px));color:#fff;font-size:16px;font-weight:600;text-align:center;padding:0 20px;'
+            vid.style.cssText = 'width:100%;max-height:80vh;object-fit:cover;'
+            overlay.appendChild(closeBtn); overlay.appendChild(vid); overlay.appendChild(statusEl)
             document.body.appendChild(overlay)
             let stopped = false
             const cleanup = () => { stopped = true; const tracks = vid.srcObject as MediaStream; tracks?.getTracks().forEach(t => t.stop()); overlay.remove() }
             closeBtn.onclick = cleanup
 
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
-              .then(stream => {
-                vid.srcObject = stream; vid.play()
-                if (!('BarcodeDetector' in window)) { status.textContent = 'BarcodeDetector not supported. Enter manually.'; setTimeout(cleanup, 2000); return }
-                const det = new (window as any).BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128'] })
-                const scan = async () => {
-                  if (stopped) return
-                  try {
-                    const res = await det.detect(vid)
-                    if (res.length > 0) {
-                      status.textContent = `Found: ${res[0].rawValue}`
-                      const foundCode = res[0].rawValue
-                      cleanup()
-                      setBcInput(foundCode)
-                      setCamBarcode(foundCode)
-                      return
-                    }
-                  } catch {}
-                  requestAnimationFrame(scan)
+            // Get BarcodeDetector — native or polyfill
+            let DetectorClass: any = null
+            if ('BarcodeDetector' in window) {
+              DetectorClass = (window as any).BarcodeDetector
+            } else if ((window as any).barcodeDetectorPolyfill?.BarcodeDetectorPolyfill) {
+              DetectorClass = (window as any).barcodeDetectorPolyfill.BarcodeDetectorPolyfill
+            }
+
+            if (!DetectorClass) {
+              statusEl.textContent = 'Loading scanner...'
+              // Wait for polyfill to load (it may still be loading)
+              let attempts = 0
+              const waitForPolyfill = setInterval(() => {
+                attempts++
+                if ((window as any).barcodeDetectorPolyfill?.BarcodeDetectorPolyfill) {
+                  DetectorClass = (window as any).barcodeDetectorPolyfill.BarcodeDetectorPolyfill
+                  clearInterval(waitForPolyfill)
+                  startScanning()
+                } else if (attempts > 30) {
+                  clearInterval(waitForPolyfill)
+                  statusEl.textContent = 'Scanner not available. Enter barcode manually.'
+                  setTimeout(cleanup, 2500)
                 }
-                vid.onloadeddata = () => scan()
-              })
-              .catch(() => { status.textContent = 'Camera access denied.'; setTimeout(cleanup, 2000) })
+              }, 200)
+
+              navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+                .then(stream => { vid.srcObject = stream; vid.play() })
+                .catch(() => { statusEl.textContent = 'Camera access denied.'; clearInterval(waitForPolyfill); setTimeout(cleanup, 2000) })
+              return
+            }
+
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+              .then(stream => { vid.srcObject = stream; vid.play(); startScanning() })
+              .catch(() => { statusEl.textContent = 'Camera access denied.'; setTimeout(cleanup, 2000) })
+
+            function startScanning() {
+              if (!DetectorClass) return
+              const det = new DetectorClass({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128'] })
+              let scanning = false
+              const scan = async () => {
+                if (stopped || scanning) return
+                scanning = true
+                try {
+                  const res = await det.detect(vid)
+                  if (res.length > 0) {
+                    statusEl.textContent = `Found: ${res[0].rawValue}`
+                    const foundCode = res[0].rawValue
+                    cleanup()
+                    setBcInput(foundCode)
+                    setCamBarcode(foundCode)
+                    scanning = false
+                    return
+                  }
+                } catch {}
+                scanning = false
+                if (!stopped) setTimeout(() => requestAnimationFrame(scan), 150)
+              }
+              vid.onloadeddata = () => scan()
+              // Also start if video already playing
+              if (vid.readyState >= 2) scan()
+            }
           }}>📸 Open camera scanner</button>
 
           {scanErr && <p className={s.warn}>{scanErr}</p>}
