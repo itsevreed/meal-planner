@@ -1,6 +1,7 @@
 export interface MacroMeal {
   name: string
   description?: string
+  notes?: string
   cal: number
   protein: number
   carbs: number
@@ -33,78 +34,32 @@ export interface DayPlan {
 
 export interface MealPlan {
   days: DayPlan[]
-  weekId?: string // "2026-W12" format
+  weekId?: string
 }
 
-export interface Dislikes {
-  his: string[]
-  her: string[]
-}
+export interface Dislikes { his: string[]; her: string[] }
 
-export interface GroceryItem {
-  name: string
-  amount: string
-  category: string
-}
+export interface GroceryItem { name: string; amount: string; category: string }
 
 export interface MealIdea {
-  name: string
-  description: string
-  cal: number
-  protein: number
-  carbs: number
-  fat: number
-  portions: PortionItem[]
+  name: string; description: string; cal: number; protein: number; carbs: number; fat: number; portions: PortionItem[]
 }
 
 export interface PresetMeal {
-  id: string
-  name: string
-  mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack'
-  who: 'his' | 'her' | 'shared'
-  cal: number
-  protein: number
-  carbs: number
-  fat: number
-  portions: PortionItem[]
-  createdAt: string
+  id: string; name: string; mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack'; who: 'his' | 'her' | 'shared'
+  cal: number; protein: number; carbs: number; fat: number; portions: PortionItem[]; createdAt: string
 }
 
-export interface WeightEntry {
-  id: string
-  person: 'his' | 'her'
-  weight: number
-  date: string
-  createdAt: string
+export interface WeightEntry { id: string; person: 'his' | 'her'; weight: number; date: string; createdAt: string }
+export interface ScannedFood { id: string; barcode: string; name: string; brand: string; servingSize: string; cal: number; protein: number; carbs: number; fat: number; fiber: number; sugar: number; imageUrl: string; createdAt: string }
+export interface WaterEntry { id: string; person: 'his' | 'her'; glasses: number; date: string }
+export interface LockedMeal { id: string; week_id: string; day_index: number; person: string; meal_type: string }
+
+export interface FavoriteMeal {
+  id: string; person: 'his' | 'her' | 'shared'; mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack'
+  name: string; input: string; cal: number; protein: number; carbs: number; fat: number
+  portions: PortionItem[]; useCount: number
 }
 
-export interface ScannedFood {
-  id: string
-  barcode: string
-  name: string
-  brand: string
-  servingSize: string
-  cal: number
-  protein: number
-  carbs: number
-  fat: number
-  fiber: number
-  sugar: number
-  imageUrl: string
-  createdAt: string
-}
-
-export interface WaterEntry {
-  id: string
-  person: 'his' | 'her'
-  glasses: number
-  date: string
-}
-
-export interface LockedMeal {
-  id: string
-  week_id: string
-  day_index: number
-  person: string
-  meal_type: string
-}
+export interface WeekTemplate { id: string; name: string; plan: MealPlan; createdAt: string }
+export interface UserSettings { person: string; calTarget: number; proteinTarget: number; goalWeight: number }
