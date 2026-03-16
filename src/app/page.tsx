@@ -229,6 +229,7 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
   const savePr = async (meal: MacroMeal, mt: string) => { const { data } = await supabase.from('preset_meals').insert({ name: meal.name, meal_type: mt, who: mt === 'dinner' ? 'shared' : pk, cal: meal.cal, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, portions: meal.portions || [] }).select().single(); if (data) { setPresets(p => [{ id: data.id, name: data.name, mealType: data.meal_type, who: data.who, cal: data.cal, protein: data.protein, carbs: data.carbs, fat: data.fat, portions: data.portions || [], createdAt: data.created_at }, ...p]); showToast('Preset saved') } }
   const delPr = async (id: string) => { await supabase.from('preset_meals').delete().eq('id', id); setPresets(p => p.filter(x => x.id !== id)); showToast('Deleted') }
   const usePr = (p: PresetMeal, di: number, mt: string) => { const meal: MacroMeal = { name: p.name, cal: p.cal, protein: p.protein, carbs: p.carbs, fat: p.fat, portions: p.portions }; updateDay(di, d => mt === 'dinner' ? { ...d, dinner: { input: p.name, meal, eaten: false } } : { ...d, [pk]: { ...d[pk], [mt]: { input: p.name, meal, eaten: false } } }); setPresetPick(null); showToast('Applied') }
+  const usePrDirect = (p: PresetMeal, di: number, mt: string) => { const meal: MacroMeal = { name: p.name, cal: p.cal, protein: p.protein, carbs: p.carbs, fat: p.fat, portions: p.portions }; updateDay(di, d => mt === 'dinner' ? { ...d, dinner: { input: p.name, meal, eaten: false } } : { ...d, [pk]: { ...d[pk], [mt]: { input: p.name, meal, eaten: false } } }); showToast(`Using preset: ${p.name}`) }
 
   // Templates
   const saveTemplate = async () => {
@@ -291,7 +292,15 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
       {/* Favorites quick picks */}
       {!pm.meal && myFavs.length > 0 && <div className={s.favRow}>{myFavs.map(f => <button key={f.id} className={s.favBtn} onClick={() => useFav(f, di, mt)}><span className={s.favName}>{f.name}</span><span className={s.sub}>{f.cal}cal</span></button>)}</div>}
       <div className={s.mealRow}>
-        <MealInputField key={`${di}-${mt}`} initial={pm.input} placeholder={ph} disabled={isC || locked} onSubmit={v => calcMeal(di, mt, v)} onSync={v => updateDay(di, d => mt === 'dinner' ? { ...d, dinner: { ...d.dinner, input: v } } : { ...d, [pk]: { ...d[pk], [mt]: { ...(d[pk] as any)[mt], input: v } } })} />
+        <MealInputField key={`${di}-${mt}`} initial={pm.input} placeholder={ph} disabled={isC || locked}
+          onSubmit={v => calcMeal(di, mt, v)}
+          onSync={v => updateDay(di, d => mt === 'dinner' ? { ...d, dinner: { ...d.dinner, input: v } } : { ...d, [pk]: { ...d[pk], [mt]: { ...(d[pk] as any)[mt], input: v } } })}
+          suggestions={[...presets.filter(p => p.mealType === mt && (p.who === who || p.who === 'shared')).map(p => ({ id: p.id, name: p.name, cal: p.cal, protein: p.protein, type: 'preset' as const, data: p })), ...favorites.filter(f => f.mealType === mt && (f.person === who || f.person === 'shared')).map(f => ({ id: f.id, name: f.name, cal: f.cal, protein: f.protein, type: 'fav' as const, data: f }))]}
+          onSelectSuggestion={(sg) => {
+            if (sg.type === 'preset') usePrDirect(sg.data as PresetMeal, di, mt)
+            else useFav(sg.data as FavoriteMeal, di, mt)
+          }}
+        />
         {!locked ? <button className={s.calcBtn} onClick={() => pm.input.trim() && calcMeal(di, mt, pm.input)} disabled={isC || !pm.input.trim()}>{isC ? '…' : pm.meal ? '↺' : '→'}</button> : <div className={s.lockBadge}>🔒</div>}
         <button className={s.preBtn} onClick={() => setPresetPick({ di, mt })}>⭐</button>
       </div>
@@ -301,7 +310,8 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
           <div className={s.resultName}>{locked && '🔒 '}{pm.meal.name}</div>
           <div className={s.resultAct}>
             <button className={s.actBtn} onClick={() => addFav(pm.meal!, mt, pm.input)} title="Favorite">❤️</button>
-            <button className={s.actBtn} onClick={() => setCopyTgt({ meal: pm, who, mt })}>📋</button>
+            <button className={s.actBtn} onClick={() => savePr(pm.meal!, mt)} title="Save preset">⭐</button>
+            <button className={s.actBtn} onClick={() => setCopyTgt({ meal: pm, who, mt })} title="Copy">📋</button>
             <button className={`${s.actBtn} ${locked ? s.actBtnOn : ''}`} onClick={() => togLk(di, who, mt)}>{locked ? '🔓' : '🔒'}</button>
             <button className={s.actBtn} onClick={() => { setEditNotes({ di, mt }); setNotesVal(pm.meal?.notes || '') }}>📝</button>
           </div>
@@ -493,10 +503,44 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
 }
 
 // ═══════════ MEAL INPUT ═══════════
-function MealInputField({ initial, placeholder, disabled, onSubmit, onSync }: { initial: string; placeholder: string; disabled: boolean; onSubmit: (v: string) => void; onSync: (v: string) => void }) {
+type Suggestion = { id: string; name: string; cal: number; protein: number; type: 'preset' | 'fav'; data: any }
+
+function MealInputField({ initial, placeholder, disabled, onSubmit, onSync, suggestions, onSelectSuggestion }: {
+  initial: string; placeholder: string; disabled: boolean
+  onSubmit: (v: string) => void; onSync: (v: string) => void
+  suggestions?: Suggestion[]; onSelectSuggestion?: (sg: Suggestion) => void
+}) {
   const [val, setVal] = useState(initial)
+  const [showDrop, setShowDrop] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
   useEffect(() => { setVal(initial) }, [initial])
-  return <input type="text" placeholder={placeholder} value={val} className={s.mealInput} onChange={e => setVal(e.target.value)} onBlur={() => { if (val !== initial) onSync(val) }} onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onSync(val); onSubmit(val) } }} disabled={disabled} />
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setShowDrop(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const filtered = val.trim().length >= 2 && suggestions
+    ? suggestions.filter(sg => sg.name.toLowerCase().includes(val.toLowerCase()))
+    : []
+
+  return <div ref={ref} className={s.inputWrap}>
+    <input type="text" placeholder={placeholder} value={val} className={s.mealInput}
+      onChange={e => { setVal(e.target.value); setShowDrop(true) }}
+      onFocus={() => setShowDrop(true)}
+      onBlur={() => { setTimeout(() => setShowDrop(false), 200); if (val !== initial) onSync(val) }}
+      onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { setShowDrop(false); onSync(val); onSubmit(val) } }}
+      disabled={disabled} />
+    {showDrop && filtered.length > 0 && <div className={s.dropdown}>
+      {filtered.slice(0, 5).map(sg => <button key={sg.id} className={s.dropItem} onMouseDown={e => { e.preventDefault(); setVal(sg.name); setShowDrop(false); onSelectSuggestion?.(sg) }}>
+        <span>{sg.type === 'fav' ? '❤️' : '⭐'} {sg.name}</span>
+        <small className={s.sub}>{sg.cal} cal · {sg.protein}g P</small>
+      </button>)}
+    </div>}
+  </div>
 }
 
 // ═══════════ PORTIONS ═══════════

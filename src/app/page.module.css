@@ -123,6 +123,12 @@
 .mealRow { display: flex; gap: 6px; align-items: flex-start; }
 .mealInput { flex: 1; padding: 10px 12px; font-size: 16px; border: .5px solid var(--border2); border-radius: var(--radius); background: var(--bg); color: var(--text); min-width: 0; min-height: 44px; }
 .mealInput:focus { outline: none; border-color: var(--green); } .mealInput:disabled { opacity: .5; }
+.inputWrap { flex: 1; position: relative; min-width: 0; }
+.dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--bg); border: 1px solid var(--border2); border-radius: var(--radius); box-shadow: 0 4px 16px rgba(0,0,0,.12); z-index: 50; max-height: 200px; overflow-y: auto; margin-top: 4px; }
+.dropItem { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 10px 12px; border: none; background: none; cursor: pointer; font-size: 13px; color: var(--text); text-align: left; border-bottom: .5px solid var(--border); gap: 8px; min-height: 44px; }
+.dropItem:last-child { border-bottom: none; }
+.dropItem:hover { background: var(--green-bg); }
+.dropItem span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .calcBtn { padding: 10px; font-size: 14px; border: .5px solid var(--border2); border-radius: var(--radius); background: none; color: var(--text); min-width: 44px; min-height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .calcBtn:hover:not(:disabled) { background: var(--green-bg); color: var(--green); } .calcBtn:disabled { opacity: .4; }
 .lockBadge { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
