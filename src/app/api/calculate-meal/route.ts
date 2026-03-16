@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
-  const { mealInput, mealType, person, remainingCals, targetProtein, dinnerMacros } = await req.json()
+  const { mealInput, mealType, person, remainingCals, targetProtein, dinnerMacros, exactLunchBudget } = await req.json()
 
   let prompt = ''
 
@@ -33,19 +33,30 @@ Respond ONLY with valid JSON, no markdown:
     const isHim = person === 'his'
     const weightNote = isHim ? "He is 5'9\", 215 lbs, target ~1820 cal/day." : "She is 5'7\", 175 lbs, target ~1490 cal/day."
 
+    // If we have an exact lunch budget from the B+L dialog, use it
+    const mealBudget = mealType === 'lunch' && exactLunchBudget
+      ? exactLunchBudget
+      : mealType === 'breakfast'
+        ? Math.round(calTarget * 0.42)
+        : Math.round(calTarget * 0.58)
+
     prompt = `You are a precise nutritionist helping plan a ${mealType} meal. ${weightNote}
 
-After dinner (${dinnerMacros?.cal || 0} cal, ${dinnerMacros?.protein || 0}g protein), this person has ~${calTarget} calories remaining for ${mealType === 'breakfast' ? 'breakfast and lunch combined — allocate appropriately for ' + mealType : mealType}.
+After dinner (${dinnerMacros?.cal || 0} cal, ${dinnerMacros?.protein || 0}g protein), this person has ~${calTarget} calories remaining for breakfast and lunch combined.
+
+THIS ${mealType.toUpperCase()} MUST BE EXACTLY ~${mealBudget} CALORIES. Do NOT exceed this number.
 
 The meal they want: "${mealInput}"
 
-Calculate exact portions of each ingredient so the total hits close to the calorie target for this meal. Prioritize HIGH PROTEIN — maximize protein within the calorie budget. Be specific with amounts (e.g. "6 oz", "1 cup", "2 large eggs").
+Calculate exact portions of each ingredient so the total hits close to ${mealBudget} calories for this meal. Prioritize HIGH PROTEIN — maximize protein within the calorie budget. Be specific with amounts (e.g. "6 oz", "1 cup", "2 large eggs").
+
+CRITICAL: The sum of all portion calories MUST equal the meal's total cal. Do not exceed ${mealBudget} calories.
 
 Respond ONLY with valid JSON, no markdown:
 {
   "name": "Meal name",
   "description": "Brief description with key amounts",
-  "cal": ${mealType === 'breakfast' ? Math.round(calTarget * 0.42) : Math.round(calTarget * 0.58)},
+  "cal": ${mealBudget},
   "protein": 38,
   "carbs": 30,
   "fat": 12,

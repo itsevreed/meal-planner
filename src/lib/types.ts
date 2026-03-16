@@ -18,8 +18,8 @@ export interface PortionItem {
 }
 
 export interface PersonMeal {
-  input: string          // what the user typed
-  meal: MacroMeal | null // calculated result
+  input: string
+  meal: MacroMeal | null
 }
 
 export interface DayPlan {
@@ -33,7 +33,7 @@ export interface DayPlan {
     breakfast: PersonMeal
     lunch: PersonMeal
   }
-  dinner: PersonMeal     // shared, manual input
+  dinner: PersonMeal
 }
 
 export interface MealPlan {
@@ -72,4 +72,27 @@ export interface MealIdeasResponse {
   breakfast: MealIdea[]
   lunch: MealIdea[]
   dinner: MealIdea[]
+}
+
+// Preset meals
+export interface PresetMeal {
+  id: string
+  name: string
+  mealType: 'breakfast' | 'lunch' | 'dinner'
+  who: 'his' | 'her' | 'shared'
+  cal: number
+  protein: number
+  carbs: number
+  fat: number
+  portions: PortionItem[]
+  createdAt: string
+}
+
+// Weight tracking
+export interface WeightEntry {
+  id: string
+  person: 'his' | 'her'
+  weight: number
+  date: string
+  createdAt: string
 }

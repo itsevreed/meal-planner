@@ -48,7 +48,7 @@ Respond ONLY with valid JSON, no markdown, no preamble. Format:
     }
   ]
 }
-Include all 7 days. Meal names should be descriptive (e.g. "Scrambled eggs with turkey bacon & avocado toast"). Macros in grams.`
+Include all 7 days. Meal names should be descriptive. Macros in grams.`
 
   try {
     const message = await client.messages.create({

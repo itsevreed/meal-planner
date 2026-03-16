@@ -34,17 +34,15 @@ Meal plan:
 ${mealSummary.join('\n')}
 
 Rules:
-- Combine the same ingredient across days (e.g. if chicken appears 3 times, total it up)
-- Scale to realistic purchase quantities (e.g. "2 lbs ground beef", "1 dozen eggs")
-- Group into these categories: Proteins, Produce, Dairy & Eggs, Pantry & Dry Goods, Condiments & Sauces, Other
+- Combine the same ingredient across days
+- Scale to realistic purchase quantities
+- Group into: Proteins, Produce, Dairy & Eggs, Pantry & Dry Goods, Condiments & Sauces, Other
 - Keep amounts practical for grocery shopping
 
 Respond ONLY with valid JSON, no markdown:
 {
   "items": [
-    { "name": "Ground beef (93% lean)", "amount": "3 lbs", "category": "Proteins" },
-    { "name": "Chicken breast", "amount": "2 lbs", "category": "Proteins" },
-    { "name": "Romaine lettuce", "amount": "2 heads", "category": "Produce" }
+    { "name": "Ground beef (93% lean)", "amount": "3 lbs", "category": "Proteins" }
   ]
 }`
 

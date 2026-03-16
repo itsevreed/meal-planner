@@ -6,11 +6,6 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 export async function POST(req: NextRequest) {
   const { who, dislikes, calBudget, proteinTarget } = await req.json()
 
-  // who: 'his' | 'her'
-  // dislikes: string[] for this person
-  // calBudget: { breakfast: number, lunch: number, dinner: number }
-  // proteinTarget: number (daily grams)
-
   const dislikeList = dislikes.length > 0 ? dislikes.join(', ') : 'none'
 
   const prompt = `You are a creative nutritionist. Generate meal ideas for ONE person for ONE day.
@@ -29,7 +24,6 @@ For each meal type, generate exactly 3 different ideas. Each idea must include:
 - Exact calorie and macro counts (that DO NOT exceed the limits above)
 - A detailed ingredient list with amounts, calories, and protein per ingredient
 - The sum of ingredient calories MUST equal the meal's total calories
-- The sum of ingredient protein MUST equal the meal's total protein
 
 Prioritize HIGH PROTEIN meals. Be creative — vary cuisines and styles.
 
