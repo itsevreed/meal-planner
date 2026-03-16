@@ -43,6 +43,31 @@ export default function Home() {
   const [groceryLoading, setGroceryLoading] = useState(false)
   const [expandedDay, setExpandedDay] = useState<number>(0)
 
+  // Ensure every day/person/meal slot exists and has the right shape
+  const sanitizePlan = (raw: any): MealPlan => {
+    const safeMeal = (m: any): PersonMeal => ({
+      input: typeof m?.input === 'string' ? m.input : '',
+      meal: m?.meal ?? null,
+    })
+    const days = DAYS_META.map((meta, i) => {
+      const d = raw?.days?.[i] ?? {}
+      return {
+        day: meta.name,
+        theme: meta.theme,
+        his: {
+          breakfast: safeMeal(d?.his?.breakfast),
+          lunch: safeMeal(d?.his?.lunch),
+        },
+        her: {
+          breakfast: safeMeal(d?.her?.breakfast),
+          lunch: safeMeal(d?.her?.lunch),
+        },
+        dinner: safeMeal(d?.dinner),
+      }
+    })
+    return { days }
+  }
+
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
@@ -55,7 +80,7 @@ export default function Home() {
       }
       const { data: planData } = await supabase
         .from('meal_plan').select('*').order('created_at', { ascending: false }).limit(1).single()
-      if (planData?.plan) setPlan(planData.plan as MealPlan)
+      if (planData?.plan) setPlan(sanitizePlan(planData.plan))
     } catch {}
     setLoading(false)
   }, [])
