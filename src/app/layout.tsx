@@ -19,9 +19,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" data-theme="light">
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
-        {/* Barcode polyfill for Safari/Firefox */}
-        <script src="https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.15/dist/index.js" defer></script>
-        <script src="https://cdn.jsdelivr.net/npm/@undecaf/barcode-detector-polyfill@0.9.23/dist/index.js" defer></script>
       </head>
       <body>{children}</body>
     </html>
