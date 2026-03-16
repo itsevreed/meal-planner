@@ -307,7 +307,8 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
   }
   const subWater = async () => { if (!todayW || todayW.glasses <= 0) return; const ng = todayW.glasses - 1; await supabase.from('water_entries').update({ glasses: ng }).eq('id', todayW.id); setWater(p => p.map(w => w.id === todayW.id ? { ...w, glasses: ng } : w)) }
 
-  // Barcode
+  // Barcode - use ref to bridge camera DOM code with React
+  const pendingScanRef = useRef<string | null>(null)
   const doScan = async (code?: string) => {
     const bc = (code || bcInput).trim(); if (!bc) return; setScanLoading(true); setScanErr('')
     try {
@@ -321,6 +322,11 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
     } catch { setScanErr('Failed to scan') }
     setScanLoading(false)
   }
+  // When camera finds a barcode, it sets pendingScanRef then triggers this via state
+  const [camBarcode, setCamBarcode] = useState<string | null>(null)
+  useEffect(() => {
+    if (camBarcode) { doScan(camBarcode); setCamBarcode(null) }
+  }, [camBarcode])
   const delScan = async (id: string) => {
     const old = scanned.find(x => x.id === id)
     await supabase.from('scanned_foods').delete().eq('id', id); setScanned(p => p.filter(x => x.id !== id))
@@ -573,9 +579,10 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
                     const res = await det.detect(vid)
                     if (res.length > 0) {
                       status.textContent = `Found: ${res[0].rawValue}`
+                      const foundCode = res[0].rawValue
                       cleanup()
-                      setBcInput(res[0].rawValue)
-                      doScan(res[0].rawValue)
+                      setBcInput(foundCode)
+                      setCamBarcode(foundCode)
                       return
                     }
                   } catch {}
