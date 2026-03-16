@@ -34,12 +34,28 @@ type Tab = 'plan' | 'ideas' | 'presets' | 'dislikes' | 'grocery' | 'weight' | 's
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null)
+  const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
-  // Check localStorage on mount
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('meal-planner-user') : null
     if (saved === 'evan' || saved === 'liv') setUser(saved)
+    // Load theme preference
+    const savedTheme = typeof window !== 'undefined' ? localStorage.getItem('meal-planner-theme') : null
+    if (savedTheme === 'dark' || savedTheme === 'light') {
+      setTheme(savedTheme)
+      document.documentElement.setAttribute('data-theme', savedTheme)
+    } else if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setTheme('dark')
+      document.documentElement.setAttribute('data-theme', 'dark')
+    }
   }, [])
+
+  const toggleTheme = () => {
+    const next = theme === 'light' ? 'dark' : 'light'
+    setTheme(next)
+    localStorage.setItem('meal-planner-theme', next)
+    document.documentElement.setAttribute('data-theme', next)
+  }
 
   const selectUser = (u: User) => {
     localStorage.setItem('meal-planner-user', u)
@@ -51,14 +67,17 @@ export default function Home() {
     setUser(null)
   }
 
-  if (!user) return <LoginScreen onSelect={selectUser} />
-  return <AppMain user={user} onSwitch={switchUser} />
+  if (!user) return <LoginScreen onSelect={selectUser} theme={theme} onToggleTheme={toggleTheme} />
+  return <AppMain user={user} onSwitch={switchUser} theme={theme} onToggleTheme={toggleTheme} />
 }
 
 // ═══════════ LOGIN SCREEN ═══════════
-function LoginScreen({ onSelect }: { onSelect: (u: User) => void }) {
+function LoginScreen({ onSelect, theme, onToggleTheme }: { onSelect: (u: User) => void; theme: string; onToggleTheme: () => void }) {
   return (
     <div className={styles.loginScreen}>
+      <button className={styles.themeToggleFloat} onClick={onToggleTheme} title="Toggle dark/light mode">
+        {theme === 'light' ? '🌙' : '☀️'}
+      </button>
       <div className={styles.loginCard}>
         <h1 className={styles.loginTitle}>Meal Planner</h1>
         <p className={styles.loginSub}>High-protein weekly meals · weight loss mode</p>
@@ -81,7 +100,7 @@ function LoginScreen({ onSelect }: { onSelect: (u: User) => void }) {
 }
 
 // ═══════════ MAIN APP ═══════════
-function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
+function AppMain({ user, onSwitch, theme, onToggleTheme }: { user: User; onSwitch: () => void; theme: string; onToggleTheme: () => void }) {
   const profile = PROFILES[user]
   const personKey = profile.key // 'his' or 'her'
 
@@ -406,6 +425,9 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
             <p>{profile.calTarget.toLocaleString()} cal · {profile.proteinTarget}g protein daily</p>
           </div>
           <button className={styles.switchBtn} onClick={onSwitch}>Switch user</button>
+          <button className={styles.themeToggle} onClick={onToggleTheme} title="Toggle dark/light mode">
+            {theme === 'light' ? '🌙' : '☀️'}
+          </button>
         </div>
         {progress.total > 0 && (
           <div className={styles.headerProgress}>
@@ -734,11 +756,57 @@ function AppMain({ user, onSwitch }: { user: User; onSwitch: () => void }) {
                 disabled={scanning}
               />
               <button className={styles.scanBtn} onClick={scanBarcode} disabled={scanning || !barcodeInput.trim()}>
-                {scanning ? <><span className={styles.btnSpinner} /> Looking up...</> : '🔍 Scan'}
+                {scanning ? <><span className={styles.btnSpinner} /> Looking up...</> : '🔍 Look up'}
               </button>
             </div>
+            {/* Camera scan button for mobile */}
+            <div className={styles.cameraScanRow}>
+              <label className={styles.cameraScanBtn}>
+                📸 Scan with camera
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className={styles.hiddenInput}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    setScanError('')
+                    // Try BarcodeDetector API (Chrome/Edge/Safari 17+)
+                    if ('BarcodeDetector' in window) {
+                      try {
+                        const bitmap = await createImageBitmap(file)
+                        const detector = new (window as any).BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] })
+                        const results = await detector.detect(bitmap)
+                        if (results.length > 0) {
+                          setBarcodeInput(results[0].rawValue)
+                          // Auto-scan
+                          setScanning(true)
+                          try {
+                            const res = await fetch('/api/scan-barcode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barcode: results[0].rawValue }) })
+                            const data = await res.json()
+                            if (data.error) { setScanError(data.error) } else {
+                              const f = data.food
+                              const { data: saved } = await supabase.from('scanned_foods').insert({ barcode: f.barcode, name: f.name, brand: f.brand, serving_size: f.servingSize, cal: f.cal, protein: f.protein, carbs: f.carbs, fat: f.fat, fiber: f.fiber, sugar: f.sugar, image_url: f.imageUrl }).select().single()
+                              if (saved) setScannedFoods(prev => [{ id: saved.id, barcode: saved.barcode, name: saved.name, brand: saved.brand, servingSize: saved.serving_size, cal: saved.cal, protein: saved.protein, carbs: saved.carbs, fat: saved.fat, fiber: saved.fiber || 0, sugar: saved.sugar || 0, imageUrl: saved.image_url || '', createdAt: saved.created_at }, ...prev])
+                              setBarcodeInput('')
+                            }
+                          } catch { setScanError('Failed to look up barcode.') }
+                          setScanning(false)
+                        } else {
+                          setScanError('No barcode detected in the image. Try holding the camera closer to the barcode.')
+                        }
+                      } catch { setScanError('Could not read barcode from image. Try entering the number manually.') }
+                    } else {
+                      setScanError('Camera barcode scanning is not supported on this browser. Please enter the number manually.')
+                    }
+                    e.target.value = '' // reset file input
+                  }}
+                />
+              </label>
+            </div>
             {scanError && <div className={styles.scanError}>{scanError}</div>}
-            <p className={styles.scanHint}>Enter the barcode number printed below the barcode lines on any food package. Data sourced from Open Food Facts (free, community database).</p>
+            <p className={styles.scanHint}>Tip: On mobile, use "Scan with camera" to photograph the barcode. On desktop, type the number below the barcode lines.</p>
           </div>
 
           {/* Scanned foods list */}
