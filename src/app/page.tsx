@@ -760,15 +760,15 @@ function AppMain({ user, onSwitch, theme, onToggleTheme }: { user: User; onSwitc
         <div className={styles.sectionIntro}><h2>{profile.label}'s Weight</h2><p>Log regularly. We show running averages + trend toward your goal.</p></div>
         <div className={styles.inputRow}>
           <input type="date" value={weightDate} onChange={e => setWeightDate(e.target.value)} />
-          <input type="number" value={weightInput} onChange={e => setWeightInput(e.target.value)} placeholder="lbs" step="0.1" style={{ width: 80 }} onKeyDown={e => { if (e.key === 'Enter') addWeight() }} />
+          <input type="number" value={weightInput} onChange={e => setWeightInput(e.target.value)} placeholder="lbs" step="0.1" className={styles.weightNumField} onKeyDown={e => { if (e.key === 'Enter') addWeight() }} />
           <button className={styles.addBtn} onClick={addWeight}>Log</button>
         </div>
         <div className={styles.inputRow} style={{ marginTop: 8 }}>
-          <span className={styles.muted}>Goal weight:</span>
-          <input type="number" value={goalWeight} onChange={e => setGoal(parseFloat(e.target.value) || 0)} step="1" style={{ width: 70 }} />
+          <span className={styles.muted}>Goal:</span>
+          <input type="number" value={goalWeight} onChange={e => setGoal(parseFloat(e.target.value) || 0)} step="1" className={styles.goalWeightInput} />
           <span className={styles.muted}>lbs</span>
         </div>
-        {wStats && (<div className={styles.summaryGrid} style={{ marginTop: 16 }}>
+        {wStats && (<div className={`${styles.summaryGrid} ${styles.weightStatsGrid}`}>
           <div className={styles.summaryCard}><div className={styles.summaryLabel}>Current</div><div className={styles.summaryValue}>{wStats.latest} lbs</div></div>
           <div className={styles.summaryCard}><div className={styles.summaryLabel}>7d avg</div><div className={styles.summaryValue}>{wStats.avg7}</div></div>
           <div className={styles.summaryCard}><div className={styles.summaryLabel}>30d avg</div><div className={styles.summaryValue}>{wStats.avg30}</div></div>
