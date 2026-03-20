@@ -24,10 +24,16 @@ ${dislikeWarning}${scannedFoodsRef}
 
 CRITICAL: Use ONLY the ingredients the user mentioned. Do NOT add extra ingredients, sauces, oils, sides, or garnishes unless explicitly listed.
 
+COOKED vs RAW — THIS IS IMPORTANT:
+- If the user says "cooked" (e.g. "cooked chicken breast", "cooked rice", "cooked ground beef"), use COOKED weight nutrition values. Cooked meat has ~30-40% more protein per weight than raw due to water loss. Cooked rice has ~1/3 the calories per weight of dry rice.
+- If the user does NOT specify cooked/raw, ASSUME COOKED weights since people typically weigh food as they eat it.
+- Always label portions clearly as "cooked" or "raw" in the amount field so the user knows which to measure.
+- Common cooked values per oz: chicken breast ~8.8g protein/46 cal, ground beef 93% ~7.5g protein/54 cal, salmon ~6.3g protein/52 cal, rice ~0.7g protein/36 cal.
+
 Calculate realistic macros. Aim for HIGH PROTEIN (40-55g). Target ~550-700 calories.
 
 Respond ONLY with valid JSON, no markdown:
-{"name":"Meal name","description":"Brief description","cal":625,"protein":52,"carbs":45,"fat":22,"portions":[{"ingredient":"Sirloin steak","amount":"8 oz","cal":450,"protein":46,"carbs":0,"fat":22}]}`
+{"name":"Meal name","description":"Brief description","cal":625,"protein":52,"carbs":45,"fat":22,"portions":[{"ingredient":"Chicken breast","amount":"8 oz cooked","cal":368,"protein":70,"carbs":0,"fat":8}]}`
   } else {
     const isHim = person === 'his'
     const weightNote = isHim ? "He is 5'9\", 215 lbs, target ~1820 cal/day." : "She is 5'7\", 175 lbs, target ~1490 cal/day."
@@ -49,6 +55,12 @@ ${dislikeWarning}${scannedFoodsRef}
 
 CRITICAL: Use ONLY the ingredients the user mentioned. Do NOT add extras.
 
+COOKED vs RAW — THIS IS IMPORTANT:
+- If the user says "cooked" (e.g. "cooked chicken", "cooked rice"), use COOKED weight nutrition values.
+- If the user does NOT specify, ASSUME COOKED weights since people typically weigh food as served.
+- Always label amounts clearly as "cooked" or "raw" so the user knows which to measure.
+- Cooked meat has more protein per oz than raw (water loss concentrates protein). Cooked grains have fewer cal per oz than dry.
+
 Budget: exactly ~${mealBudget} calories for this ${mealType}. Do NOT exceed.
 The meal: "${mealInput}"
 
@@ -56,7 +68,7 @@ Calculate exact portions. Prioritize HIGH PROTEIN. Be specific with amounts.
 The sum of portion calories MUST equal the total cal.
 
 Respond ONLY with valid JSON, no markdown:
-{"name":"Meal name","description":"Brief description","cal":${mealBudget},"protein":38,"carbs":30,"fat":12,"portions":[{"ingredient":"Ground beef (93%)","amount":"5 oz","cal":195,"protein":30,"carbs":0,"fat":8}]}`
+{"name":"Meal name","description":"Brief description","cal":${mealBudget},"protein":38,"carbs":30,"fat":12,"portions":[{"ingredient":"Ground beef (93%)","amount":"5 oz cooked","cal":270,"protein":37,"carbs":0,"fat":13}]}`
   }
 
   try {
