@@ -26,6 +26,17 @@ function weekIdFor(off = 0) {
   const w = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7)
   return `${y}-W${String(w).padStart(2, '0')}`
 }
+function getWeekMonday(off = 0): Date {
+  const d = new Date(); d.setDate(d.getDate() + off * 7)
+  const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+  const mon = new Date(d); mon.setDate(diff); mon.setHours(0, 0, 0, 0); return mon
+}
+function getWeekDates(off = 0): Date[] {
+  const mon = getWeekMonday(off)
+  return Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d })
+}
+function fmtDate(d: Date): string { return d.toLocaleDateString('en', { month: 'short', day: 'numeric' }) }
+function fmtDateShort(d: Date): string { return `${d.getMonth() + 1}/${d.getDate()}` }
 function getTodayIndex(): number { const d = new Date().getDay(); return d === 0 ? 6 : d - 1 } // Mon=0...Sun=6
 
 type Tab = 'today' | 'plan' | 'track' | 'ideas' | 'foods' | 'grocery' | 'coach' | 'settings'
@@ -68,6 +79,7 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
   const [foodsSub, setFoodsSub] = useState<'favorites' | 'presets' | 'scanned' | 'dislikes'>('favorites')
   const [wOff, setWOff] = useState(0)
   const wid = weekIdFor(wOff)
+  const weekDates = getWeekDates(wOff)
 
   const [plan, setPlan] = useState<MealPlan>({ days: DAYS.map(eday), weekId: wid })
   const [dislikes, setDislikes] = useState<Dislikes>({ his: [], her: [] })
@@ -350,7 +362,7 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
 
       {/* ═══ TODAY ═══ */}
       {tab === 'today' && <div>
-        <h2 className={s.secTitle}>{DAY_NAMES[new Date().getDay()]}'s Plan</h2>
+        <h2 className={s.secTitle}>{DAY_NAMES[new Date().getDay()]}, {fmtDate(new Date())}</h2>
         <div className={s.todayBudget}>
           <div className={s.todayBudgetMain}><span className={`${s.todayBudgetNum} ${todayBudget < 0 ? s.warn : s.green}`}>{todayBudget}</span><span className={s.sub}>cal remaining</span></div>
           <div className={s.todayStats}><span>{todayTotals.cal}/{eCal} cal</span><span className={todayTotals.protein >= ePro ? s.green : s.warn}>P {todayTotals.protein}g/{ePro}g</span></div>
@@ -374,7 +386,7 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
 
       {/* ═══ PLAN (full week) ═══ */}
       {tab === 'plan' && <div>
-        <div className={s.weekNav}><button onClick={() => setWOff(o => o - 1)}>←</button><span className={s.weekLbl}>{wOff === 0 ? 'This week' : wOff === 1 ? 'Next week' : wOff === -1 ? 'Last week' : wid}<br/><small className={s.sub}>{wid}</small></span><button onClick={() => setWOff(o => o + 1)}>→</button></div>
+        <div className={s.weekNav}><button onClick={() => setWOff(o => o - 1)}>←</button><span className={s.weekLbl}>{fmtDate(weekDates[0])} – {fmtDate(weekDates[6])}{wOff === 0 && <br/>}{wOff === 0 && <small className={s.green}>This week</small>}</span><button onClick={() => setWOff(o => o + 1)}>→</button></div>
         {/* Template actions */}
         <div className={s.tplRow}><button className={s.secBtn} onClick={saveTemplate}>💾 Save as template</button>
           {templates.length > 0 && templates.slice(0, 3).map(t => <button key={t.id} className={s.secBtn} onClick={() => loadTemplate(t)}>📂 {t.name}</button>)}
@@ -385,7 +397,7 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
             const t = totals(day), open = expDay === di, over = t.cal > eCal + 50
             return <div key={di} className={`${s.dayCard} ${open ? s.dayOpen : ''} ${di === todayIdx ? s.dayToday : ''}`}>
               <button className={s.dayHdr} onClick={() => setExpDay(open ? -1 : di)}>
-                <div className={s.dayL}><span className={s.dayN}>{di === todayIdx ? `📍 ${day.day}` : day.day}</span><span className={s.dayTh}>{day.theme}</span></div>
+                <div className={s.dayL}><span className={s.dayN}>{di === todayIdx && wOff === 0 ? `📍 ${day.day}` : day.day}</span><span className={s.dayDate}>{fmtDateShort(weekDates[di])}</span><span className={s.dayTh}>{day.theme}</span></div>
                 <div className={s.dayR}>{t.cal > 0 && <span className={`${s.pill} ${over ? s.pillWarn : ''}`}>{t.cal} · {t.protein}g P</span>}<span className={s.chev}>{open ? '▲' : '▼'}</span></div>
               </button>
               {open && <div className={s.dayBody}>
@@ -404,7 +416,7 @@ function App({ user, onSwitch, theme, onToggle }: { user: User; onSwitch: () => 
         <div className={s.subTabs}>{([['summary','📊 Summary'],['weight','⚖️ Weight'],['water','💧 Water']] as const).map(([k,l]) => <button key={k} className={`${s.subTab} ${trackSub === k ? s.active : ''}`} onClick={() => setTrackSub(k)}>{l}</button>)}</div>
         {trackSub === 'summary' && <><div className={s.grid4}><div className={s.card}><small>Avg cal</small><b className={weekStats.avgCal <= eCal ? s.green : s.warn}>{weekStats.avgCal}<small>/{eCal}</small></b></div><div className={s.card}><small>Avg protein</small><b className={weekStats.avgP >= ePro ? s.green : s.warn}>{weekStats.avgP}g<small>/{ePro}g</small></b></div><div className={s.card}><small>On target</small><b>{weekStats.ot}/7</b></div><div className={s.card}><small>Adherence</small><b>{weekStats.adh}%</b></div></div>
           <h3 className={s.subHd}>Daily breakdown</h3>
-          {plan.days.map((day, di) => { const t = totals(day), ok = t.cal > 0 && t.cal <= eCal + 50; return <div key={di} className={`${s.sumRow} ${t.cal === 0 ? s.sumEmpty : ok ? s.sumGood : s.sumOver}`}><span className={s.sumDay}>{di === todayIdx ? `📍 ${day.day}` : day.day}</span><span>{t.cal > 0 ? `${t.cal} cal · ${t.protein}g P` : '—'}</span><span>{t.cal > 0 ? (ok ? '✅' : '⚠️') : ''}</span></div> })}
+          {plan.days.map((day, di) => { const t = totals(day), ok = t.cal > 0 && t.cal <= eCal + 50; return <div key={di} className={`${s.sumRow} ${t.cal === 0 ? s.sumEmpty : ok ? s.sumGood : s.sumOver}`}><span className={s.sumDay}>{di === todayIdx && wOff === 0 ? '📍 ' : ''}{day.day} <small className={s.sub}>{fmtDateShort(weekDates[di])}</small></span><span>{t.cal > 0 ? `${t.cal} cal · ${t.protein}g P` : '—'}</span><span>{t.cal > 0 ? (ok ? '✅' : '⚠️') : ''}</span></div> })}
         </>}
         {trackSub === 'weight' && <><div className={s.inputRow}><input type="date" value={wDate} onChange={e => setWDate(e.target.value)} /><input type="number" value={wInput} onChange={e => setWInput(e.target.value)} placeholder="lbs" step="0.1" className={s.numInput} onKeyDown={e => { if (e.key === 'Enter') addW() }} /><button className={s.addBtn} onClick={addW}>Log</button></div>
           {wStats && <div className={s.grid4}><div className={s.card}><small>Current</small><b>{wStats.cur} lbs</b></div><div className={s.card}><small>7d avg</small><b>{wStats.a7}</b></div><div className={s.card}><small>30d avg</small><b>{wStats.a30}</b></div><div className={s.card}><small>To goal</small><b className={wStats.toG <= 0 ? s.green : s.warn}>{wStats.toG > 0 ? '-' : '+'}{Math.abs(wStats.toG)}</b></div></div>}

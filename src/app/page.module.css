@@ -103,7 +103,7 @@
 .dayOpen { box-shadow: 0 2px 16px rgba(0,0,0,.06); }
 .dayHdr { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg2); border: none; width: 100%; text-align: left; gap: 6px; cursor: pointer; min-height: 48px; color: var(--text); }
 .dayL { display: flex; align-items: center; gap: 8px; } .dayR { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-.dayN { font-size: 14px; font-weight: 600; } .dayTh { font-size: 10px; color: var(--text2); background: var(--bg); border: .5px solid var(--border2); border-radius: 99px; padding: 2px 8px; }
+.dayN { font-size: 14px; font-weight: 600; } .dayDate { font-size: 11px; color: var(--text3); } .dayTh { font-size: 10px; color: var(--text2); background: var(--bg); border: .5px solid var(--border2); border-radius: 99px; padding: 2px 8px; }
 .pill { font-size: 10px; color: var(--green); background: var(--green-bg); border-radius: 99px; padding: 2px 8px; font-weight: 500; } .pillWarn { color: var(--warn); background: var(--warn-bg); }
 .chev { font-size: 10px; color: var(--text3); }
 .dayBody { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
